@@ -511,15 +511,23 @@
   }
 
   function findDislikeButton() {
-    return document.querySelector("dislike-button-view-model button") ||
-      document.querySelector("segmented-like-dislike-button-view-model dislike-button-view-model button") ||
-      document.querySelector("#segmented-dislike-button button") ||
-      document.querySelector("button[aria-label*='Dislike' i][aria-pressed]") ||
-      document.querySelector("button[title*='Dislike' i][aria-pressed]") ||
-      Array.from(document.querySelectorAll("button[aria-label]")).find(button => {
+    const s1 = document.querySelector("dislike-button-view-model button");
+    if (s1) { console.warn("[YT_DD] findDislikeButton: selector 1 hit"); return s1; }
+    const s2 = document.querySelector("segmented-like-dislike-button-view-model dislike-button-view-model button");
+    if (s2) { console.warn("[YT_DD] findDislikeButton: selector 2 hit"); return s2; }
+    const s3 = document.querySelector("#segmented-dislike-button button");
+    if (s3) { console.warn("[YT_DD] findDislikeButton: selector 3 hit"); return s3; }
+    const s4 = document.querySelector("button[aria-label*='Dislike' i][aria-pressed]");
+    if (s4) { console.warn("[YT_DD] findDislikeButton: selector 4 hit"); return s4; }
+    const s5 = document.querySelector("button[title*='Dislike' i][aria-pressed]");
+    if (s5) { console.warn("[YT_DD] findDislikeButton: selector 5 hit"); return s5; }
+    const s6 = Array.from(document.querySelectorAll("button[aria-label]")).find(button => {
         const label = button.getAttribute("aria-label") || "";
         return /dislike this video/i.test(label);
-      }) || null;
+    });
+    if (s6) { console.warn("[YT_DD] findDislikeButton: selector 6 hit"); return s6; }
+    console.warn("[YT_DD] findDislikeButton: ALL SELECTORS MISSED");
+    return null;
   }
 
   function findLikeButton() {
@@ -580,7 +588,7 @@
 
   function getDislikeButtonState() {
     const button = findDislikeButton();
-    if (!button) return null;
+    if (!button) { console.warn("[YT_DD] findDislikeButton returned null"); return null; }
 
     const stateCandidates = [
       button,
@@ -590,14 +598,16 @@
       button.closest("yt-button-view-model")
     ].filter(Boolean);
 
+    console.warn("[YT_DD] stateCandidates:", stateCandidates.length, stateCandidates.map(e => e.tagName + (e.getAttribute?.("aria-pressed") ? "[aria-pressed=" + e.getAttribute("aria-pressed") + "]" : "")));
+
     const stateElement = stateCandidates.find(element => {
       const value = element?.getAttribute?.("aria-pressed");
       return value === "true" || value === "false";
     });
 
     const ariaPressed = stateElement?.getAttribute("aria-pressed");
-    if (ariaPressed === "true") return { button, ready: true, downvoted: true };
-    if (ariaPressed === "false") return { button, ready: true, downvoted: false };
+    if (ariaPressed === "true") { console.warn("[YT_DD] aria-pressed=true => downvoted"); return { button, ready: true, downvoted: true }; }
+    if (ariaPressed === "false") { console.warn("[YT_DD] aria-pressed=false => not downvoted"); return { button, ready: true, downvoted: false }; }
 
     const textState = stateCandidates.map(element => [
       element.getAttribute?.("aria-label"),
@@ -605,14 +615,19 @@
       element.textContent
     ].filter(Boolean).join(" ")).join(" ").toLowerCase();
 
+    console.warn("[YT_DD] no aria-pressed, checking text:", textState);
+
     if (/\b(remove|undo)\s+dislike\b|\bdisliked\b/.test(textState)) {
+      console.warn("[YT_DD] text matched downvoted");
       return { button, ready: true, downvoted: true };
     }
 
     if (/\bdislike\b/.test(textState)) {
+      console.warn("[YT_DD] text matched not downvoted");
       return { button, ready: true, downvoted: false };
     }
 
+    console.warn("[YT_DD] text did not match, returning ready=false");
     return { button, ready: false, downvoted: false };
   }
 
@@ -976,6 +991,7 @@
   }
 
   async function skipToNextPlayableVideo(reason = "manual", force = false) {
+    console.warn("[YT_DD] skipToNextPlayableVideo: reason=" + reason + " skipInProgress=" + skipInProgress + " isWatch=" + isWatchPage() + " enabled=" + enabled);
     if (skipInProgress && reason !== "already-downvoted" && reason !== "ended") return { ok: false, error: "Skip is already running." };
     if (skipInProgress) skipInProgress = false;
     if (!isWatchPage()) return { ok: false, error: "The selected tab is not a YouTube video page." };
@@ -990,19 +1006,24 @@
       if (playlistMode) {
         const currentVideoId = getVideoIdFromUrl();
         next = await getPlaylistNextVideo(currentVideoId);
+        console.warn("[YT_DD] skipToNextPlayableVideo: playlist mode, next=", next?.videoId);
       } else {
         next = await findNextPlayableVideo();
+        console.warn("[YT_DD] skipToNextPlayableVideo: findNextPlayableVideo returned", next?.videoId);
         if (!next) {
           await scrollForMoreRecommendations();
           next = await findNextPlayableVideo();
+          console.warn("[YT_DD] skipToNextPlayableVideo: after scroll, findNextPlayableVideo returned", next?.videoId);
         }
       }
 
       if (!next) {
+        console.warn("[YT_DD] skipToNextPlayableVideo: NO NEXT VIDEO FOUND, showing alert");
         alert("There is nothing new to play.");
         return { ok: false, error: "There is nothing new to play." };
       }
 
+      console.warn("[YT_DD] skipToNextPlayableVideo: navigating to", next.videoId, next.title);
       await navigateToVideo(next);
       return { ok: true, videoId: next.videoId, title: next.title };
     } finally {
@@ -1123,23 +1144,28 @@
   }
 
   async function pauseUntilDislikeButtonThenCheck() {
-    if (!enabled || !isWatchPage() || controlDetectionActive) return;
+    if (!enabled || !isWatchPage() || controlDetectionActive) { console.warn("[YT_DD] pauseUntilDislikeButtonThenCheck: early return (enabled=" + enabled + " isWatch=" + isWatchPage() + " cda=" + controlDetectionActive + ")"); return; }
 
     const token = ++startupPauseToken;
     controlDetectionActive = true;
     await notifyPlaybackWaiting();
+    console.warn("[YT_DD] pauseUntilDislikeButtonThenCheck: starting, token=" + token);
 
     try {
       while (enabled && isWatchPage() && token === startupPauseToken) {
         pauseVideoIfPossible();
 
         const dislikeState = await waitForDislikeButtonState(token);
+        console.warn("[YT_DD] waitForDislikeButtonState returned:", JSON.stringify(dislikeState));
         if (dislikeState?.ready) {
           const forcePlayOnce = await consumeForcePlayOnce();
+          console.warn("[YT_DD] dislikeState.downvoted=" + dislikeState.downvoted + " forcePlayOnce=" + forcePlayOnce);
 
           if (dislikeState.downvoted && !forcePlayOnce) {
+            console.warn("[YT_DD] AUTO-SKIPPING (already-downvoted)");
             await skipToNextPlayableVideo("already-downvoted");
           } else {
+            console.warn("[YT_DD] saving metadata and playing");
             await saveCurrentVideoMetadata({ downvoted: dislikeState.downvoted });
             await playVideoIfStillCurrent(token);
           }
@@ -1148,8 +1174,10 @@
 
         await sleep(10);
       }
+      console.warn("[YT_DD] pauseUntilDislikeButtonThenCheck: loop exited (enabled=" + enabled + " isWatch=" + isWatchPage() + " token=" + token + " startupToken=" + startupPauseToken + ")");
     } finally {
       controlDetectionActive = false;
+      console.warn("[YT_DD] pauseUntilDislikeButtonThenCheck: finally, controlDetectionActive=false");
     }
   }
 
