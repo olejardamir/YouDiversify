@@ -94,6 +94,8 @@ async function hideOverlayEverywhere() {
 }
 
 async function toggleOverlayFromAction(activeTab) {
+  await chrome.action.setBadgeText({ text: "!" });
+  setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2000);
   await setBadge(await getEnabled());
   const tab = activeTab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (!tab || !canInjectInto(tab)) {
@@ -110,7 +112,14 @@ async function toggleOverlayFromAction(activeTab) {
     return;
   }
 
-  await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_SHOW_OVERLAY" }).catch(() => null);
+  await chrome.action.setBadgeText({ text: "" });
+  try {
+    await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_SHOW_OVERLAY" });
+  } catch {
+    await chrome.action.setBadgeText({ text: "F" });
+    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2000);
+    await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_SHOW_OVERLAY" }).catch(() => null);
+  }
 }
 
 async function rememberOverlayTabForNavigation(tabId, command) {
@@ -293,15 +302,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "YT_YOUDIVERSIFY_OPEN_VIDEO") {
       return await openInYoutubeTab(message.url);
-    }
-
-    if (message?.type === "YT_YOUDIVERSIFY_OPEN_OVERLAY") {
-      const tab = message?.tabId ? await chrome.tabs.get(message.tabId).catch(() => null) : null;
-      if (!tab?.id || !canInjectInto(tab)) return { ok: false, error: "No valid YouTube tab found." };
-      await hideOverlayEverywhereExcept(tab.id);
-      const ready = await ensureOverlayScript(tab);
-      if (!ready) return { ok: false, error: "Could not inject overlay." };
-      return await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_SHOW_OVERLAY" });
     }
 
     return undefined;

@@ -25,8 +25,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Open YouDiversify floating player",
-    "default_popup": "popup.html"
+    "default_title": "Open YouDiversify floating player"
   },
   "background": {
     "service_worker": "background.js"

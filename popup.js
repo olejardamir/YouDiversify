@@ -149,20 +149,6 @@ async function init() {
 
   targetTab = await findYoutubeTab();
   if (targetTab) {
-    setStatus("Opening overlay...");
-    try {
-      const response = await Promise.race([
-        chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_OPEN_OVERLAY", tabId: targetTab.id }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000))
-      ]);
-      if (response?.ok) {
-        window.close();
-        return;
-      }
-      setStatus(response?.error || "Could not open overlay.");
-    } catch {
-      // Fallback to showing popup controls
-    }
     el.target.textContent = targetTab.title || "YouTube video tab";
     setStatus(enabled ? "Ready" : "Extension is off");
   } else {
