@@ -576,7 +576,7 @@
       };
     }
     return {
-      videoId: item?.videoId || item?.id || "",
+      videoId: (item?.videoId || item?.id || "").trim(),
       title: item?.title || "",
       url: item?.url || item?.href || "",
       href: item?.href || item?.url || "",
@@ -634,7 +634,20 @@
       if (!item.videoId) continue;
       byId.set(item.videoId, mergeVisitedEntry(byId.get(item.videoId), item));
     }
-    return Array.from(byId.values());
+    const merged = Array.from(byId.values());
+    const byName = new Map();
+    for (const item of merged) {
+      if (!item.title || !item.channelName) { byName.set(item.videoId, item); continue; }
+      const key = item.title.toLowerCase() + "|" + item.channelName.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing) { byName.set(key, item); continue; }
+      if (item.addedAt < existing.addedAt) {
+        byName.set(key, mergeVisitedEntry(item, existing));
+      } else {
+        byName.set(key, mergeVisitedEntry(existing, item));
+      }
+    }
+    return Array.from(byName.values());
   }
 
   async function getBlockedChannels() {

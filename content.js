@@ -96,7 +96,7 @@
         };
       }
       return {
-        videoId: item.videoId || item.id || "",
+        videoId: (item.videoId || item.id || "").trim(),
         title: item.title || "",
         url: item.url || item.href || "",
         href: item.href || item.url || "",
@@ -137,7 +137,20 @@
       if (!item.videoId) continue;
       byId.set(item.videoId, mergeVisitedEntry(byId.get(item.videoId), item));
     }
-    return Array.from(byId.values());
+    const merged = Array.from(byId.values());
+    const byName = new Map();
+    for (const item of merged) {
+      if (!item.title || !item.channelName) { byName.set(item.videoId, item); continue; }
+      const key = item.title.toLowerCase() + "|" + item.channelName.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing) { byName.set(key, item); continue; }
+      if (item.addedAt < existing.addedAt) {
+        byName.set(key, mergeVisitedEntry(item, existing));
+      } else {
+        byName.set(key, mergeVisitedEntry(existing, item));
+      }
+    }
+    return Array.from(byName.values());
   }
 
   async function getVisited() {
@@ -151,11 +164,16 @@
 
   async function saveVisited(videoId, title = "", url = "", metadata = {}) {
     if (!videoId) return;
-    const entries = await getVisitedEntries();
-    const existing = entries.find(item => item.videoId === videoId);
+    videoId = videoId.trim();
+    let entries = await getVisitedEntries();
+    const matchById = entries.find(item => item.videoId === videoId);
+    const channelName = metadata.channelName || matchById?.channelName || "";
+    const matchByName = title && channelName ? entries.find(item => item.videoId !== videoId && item.title === title && item.channelName === channelName) : null;
+    const existing = matchByName || matchById;
+    const targetId = existing?.videoId || videoId;
     const now = Date.now();
     const nextEntry = {
-      videoId,
+      videoId: targetId,
       title: title || existing?.title || "",
       url: url || existing?.url || existing?.href || "",
       href: url || existing?.href || existing?.url || "",
@@ -168,9 +186,10 @@
       updatedAt: now,
       lastAccessedAt: metadata.lastAccessedAt || now
     };
-    const next = entries.filter(item => item.videoId !== videoId);
-    next.push(nextEntry);
-    await chrome.storage.local.set({ [VISITED_KEY]: dedupeVisitedEntries(next).slice(-1000) });
+    entries = entries.filter(item => item.videoId !== targetId);
+    entries.push(nextEntry);
+    const deduped = dedupeVisitedEntries(entries).slice(-1000);
+    await chrome.storage.local.set({ [VISITED_KEY]: deduped });
   }
 
   async function removeVisitedVideos(videoIds = []) {
@@ -983,7 +1002,6 @@
         return { ok: false, error: "There is nothing new to play." };
       }
 
-      await saveVisited(next.videoId, next.title, next.href, { lastAccessedAt: Date.now() });
       await navigateToVideo(next);
       return { ok: true, videoId: next.videoId, title: next.title };
     } finally {
