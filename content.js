@@ -1116,12 +1116,12 @@
 
         const dislikeState = await waitForDislikeButtonState(token);
         if (dislikeState?.ready) {
-          await saveCurrentVideoMetadata({ downvoted: dislikeState.downvoted });
           const forcePlayOnce = await consumeForcePlayOnce();
 
           if (dislikeState.downvoted && !forcePlayOnce) {
             await skipToNextPlayableVideo("already-downvoted");
           } else {
+            await saveCurrentVideoMetadata({ downvoted: dislikeState.downvoted });
             await playVideoIfStillCurrent(token);
           }
           return;
@@ -1173,8 +1173,6 @@
     if (await consumeUntrackedSkipOnce(videoId)) {
       trackingSuppressedVideoId = videoId;
       await removeVisitedVideos([videoId]);
-    } else {
-      await saveCurrentVideoMetadata();
     }
     attachVideoEndListener();
     pauseUntilDislikeButtonThenCheck();
