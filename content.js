@@ -976,7 +976,8 @@
   }
 
   async function skipToNextPlayableVideo(reason = "manual", force = false) {
-    if (skipInProgress) return { ok: false, error: "Skip is already running." };
+    if (skipInProgress && reason !== "already-downvoted" && reason !== "ended") return { ok: false, error: "Skip is already running." };
+    if (skipInProgress) skipInProgress = false;
     if (!isWatchPage()) return { ok: false, error: "The selected tab is not a YouTube video page." };
     if (!enabled && !force) return { ok: false, error: "Extension is turned off. Use the power button to turn it on." };
     skipInProgress = true;
@@ -1005,7 +1006,7 @@
       await navigateToVideo(next);
       return { ok: true, videoId: next.videoId, title: next.title };
     } finally {
-      setTimeout(() => { skipInProgress = false; }, 1200);
+      skipInProgress = false;
     }
   }
 
@@ -1045,7 +1046,7 @@
       await navigateToVideo(next);
       return { ok: true, videoId: next.videoId, title: next.title, untracked: true };
     } finally {
-      setTimeout(() => { skipInProgress = false; }, 1200);
+      skipInProgress = false;
     }
   }
 
