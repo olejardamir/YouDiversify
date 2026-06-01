@@ -120,8 +120,8 @@
       title: item.title || existing.title || "",
       url: item.url || item.href || existing.url || existing.href || "",
       href: item.href || item.url || existing.href || existing.url || "",
-      upvoted: typeof item.upvoted === "boolean" ? item.upvoted : existing.upvoted,
-      downvoted: typeof item.downvoted === "boolean" ? item.downvoted : existing.downvoted,
+      upvoted: item.upvoted === true || existing.upvoted === true ? true : typeof item.upvoted === "boolean" ? item.upvoted : existing.upvoted,
+      downvoted: item.downvoted === true || existing.downvoted === true ? true : typeof item.downvoted === "boolean" ? item.downvoted : existing.downvoted,
       userPressedNext: item.userPressedNext === true || existing.userPressedNext === true,
       channelId: item.channelId || existing.channelId || "",
       channelName: item.channelName || existing.channelName || "",
@@ -177,8 +177,8 @@
       title: title || existing?.title || "",
       url: url || existing?.url || existing?.href || "",
       href: url || existing?.href || existing?.url || "",
-      upvoted: typeof metadata.upvoted === "boolean" ? metadata.upvoted : existing?.upvoted ?? null,
-      downvoted: typeof metadata.downvoted === "boolean" ? metadata.downvoted : existing?.downvoted ?? null,
+      upvoted: metadata.upvoted === true || existing?.upvoted === true ? true : typeof metadata.upvoted === "boolean" ? metadata.upvoted : existing?.upvoted ?? null,
+      downvoted: metadata.downvoted === true || existing?.downvoted === true ? true : typeof metadata.downvoted === "boolean" ? metadata.downvoted : existing?.downvoted ?? null,
       userPressedNext: metadata.userPressedNext === true || existing?.userPressedNext === true,
       channelId: metadata.channelId || existing?.channelId || "",
       channelName: metadata.channelName || existing?.channelName || "",
@@ -207,15 +207,26 @@
       return;
     }
 
+    const entries = await getVisitedEntries();
+    const existing = entries.find(item => item.videoId === videoId);
+
     const nextMetadata = { ...metadata };
     const likeState = getLikeButtonState();
     const dislikeState = getDislikeButtonState();
 
-    if (typeof nextMetadata.upvoted !== "boolean" && likeState?.ready) {
-      nextMetadata.upvoted = likeState.liked;
+    if (typeof nextMetadata.upvoted !== "boolean") {
+      if (existing?.upvoted != null) {
+        nextMetadata.upvoted = existing.upvoted;
+      } else if (likeState?.ready) {
+        nextMetadata.upvoted = likeState.liked;
+      }
     }
-    if (typeof nextMetadata.downvoted !== "boolean" && dislikeState?.ready) {
-      nextMetadata.downvoted = dislikeState.downvoted;
+    if (typeof nextMetadata.downvoted !== "boolean") {
+      if (existing?.downvoted != null) {
+        nextMetadata.downvoted = existing.downvoted;
+      } else if (dislikeState?.ready) {
+        nextMetadata.downvoted = dislikeState.downvoted;
+      }
     }
 
     const channelInfo = getChannelInfo();
@@ -651,7 +662,15 @@
     const state = getDislikeButtonState();
     if (!state?.button) return { ok: false, error: "Dislike button is not available yet." };
     if (!state.ready) return { ok: false, error: "Dislike button state is not available yet." };
-    if (!state.downvoted) state.button.click();
+    if (state.downvoted) {
+      await saveCurrentVideoMetadata({ downvoted: true });
+      return { ok: true, downvoted: true };
+    }
+    state.button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+    state.button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    state.button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+    state.button.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+    state.button.click();
     await saveCurrentVideoMetadata({ downvoted: true });
     return { ok: true, downvoted: true };
   }
@@ -983,7 +1002,8 @@
     skipInProgress = true;
 
     try {
-      await saveCurrentVideoMetadata({ userPressedNext: isUserPressedNextReason(reason) });
+      const currentMetadata = { userPressedNext: isUserPressedNextReason(reason) };
+      await saveCurrentVideoMetadata(currentMetadata);
 
       let next;
       const playlistMode = await getPlaylistMode();

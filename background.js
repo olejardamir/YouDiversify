@@ -95,20 +95,22 @@ async function hideOverlayEverywhere() {
 
 async function toggleOverlayFromAction(activeTab) {
   await setBadge(await getEnabled());
-  const currentTab = activeTab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-  const candidates = await findOverlayHostCandidates(currentTab);
-
-  for (const tab of candidates) {
-    await hideOverlayEverywhereExcept(tab.id);
-    const ready = await ensureOverlayScript(tab);
-    if (!ready) continue;
-
-    const response = await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_TOGGLE_OVERLAY" }).catch(() => null);
-    if (response) return;
+  const tab = activeTab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  if (!tab || !canInjectInto(tab)) {
+    await setTemporaryWarningBadge();
+    setTimeout(async () => setBadge(await getEnabled()), 1600);
+    return;
   }
 
-  await setTemporaryWarningBadge();
-  setTimeout(async () => setBadge(await getEnabled()), 1600);
+  await hideOverlayEverywhereExcept(tab.id);
+  const ready = await ensureOverlayScript(tab);
+  if (!ready) {
+    await setTemporaryWarningBadge();
+    setTimeout(async () => setBadge(await getEnabled()), 1600);
+    return;
+  }
+
+  await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_SHOW_OVERLAY" }).catch(() => null);
 }
 
 async function rememberOverlayTabForNavigation(tabId, command) {
@@ -291,6 +293,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "YT_YOUDIVERSIFY_OPEN_VIDEO") {
       return await openInYoutubeTab(message.url);
+    }
+
+    if (message?.type === "YT_YOUDIVERSIFY_OPEN_OVERLAY") {
+      const tab = message?.tabId ? await chrome.tabs.get(message.tabId).catch(() => null) : null;
+      if (!tab?.id || !canInjectInto(tab)) return { ok: false, error: "No valid YouTube tab found." };
+      await hideOverlayEverywhereExcept(tab.id);
+      const ready = await ensureOverlayScript(tab);
+      if (!ready) return { ok: false, error: "Could not inject overlay." };
+      return await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_SHOW_OVERLAY" });
     }
 
     return undefined;
