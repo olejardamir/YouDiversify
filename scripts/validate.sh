@@ -201,10 +201,20 @@ raise SystemExit(0 if ok else 1)
 PYEOF
 [ $? -eq 0 ] && pass "blocked-channel names are normalized" || fail "blocked-channel names use raw matching"
 
+header "21. Check manager rows open their stored video id"
+python3 << 'PYEOF'
+from pathlib import Path
+text = Path("global_overlay.js").read_text()
+bad = "normalizeYoutubeWatchUrl(entry.url || entry.href, entry.videoId)" in text
+good = 'normalizeYoutubeWatchUrl(\'\', entry.videoId)' in text
+raise SystemExit(0 if good and not bad else 1)
+PYEOF
+[ $? -eq 0 ] && pass "manager rows use videoId for open URL" || fail "manager rows can open stale entry URLs"
+
 if [ "${SKIP_ZIP_CHECK:-0}" = "1" ]; then
   pass "zip check skipped"
 else
-  header "21. Verify zip runtime files match local files"
+  header "22. Verify zip runtime files match local files"
   python3 << 'PYEOF'
 import zipfile, pathlib, sys
 required = ["manifest.json", "background.js", "content.js", "global_overlay.js"]

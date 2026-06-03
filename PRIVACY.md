@@ -1,6 +1,6 @@
 # Privacy Policy — YouDiversify
 
-**Last updated: May 31, 2026**
+**Last updated: June 3, 2026**
 
 YouDiversify does not collect, transmit, store on servers, or share any personal data.
 

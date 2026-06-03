@@ -867,7 +867,7 @@
             <div>Remove</div>
           </div>
           ${sortEntries(filtered, videoSortCol, videoSortDir).map(entry => `
-            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(normalizeYoutubeWatchUrl(entry.url || entry.href, entry.videoId))}">
+            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(normalizeYoutubeWatchUrl('', entry.videoId))}">
               <div class="yds-video-name" data-tooltip="${escapeHtml(entry.title || entry.url || entry.videoId)}">${escapeHtml(entry.title || entry.url || entry.videoId)}</div>
               <div class="yds-channel-name" data-channel-id="${escapeHtml(entry.channelId || '')}" data-channel-name="${escapeHtml(entry.channelName || '')}">${escapeHtml(entry.channelName || '')}</div>
               <div class="yds-vote-state" aria-label="${entry.upvoted === true ? "Upvoted" : entry.downvoted === true ? "Downvoted" : "Neither"}">${getVoteIcon(entry)}</div>
@@ -892,7 +892,7 @@
             <div>Remove</div>
           </div>
           ${sortEntries(entries, videoSortCol, videoSortDir).map(entry => `
-            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(normalizeYoutubeWatchUrl(entry.url || entry.href, entry.videoId))}">
+            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(normalizeYoutubeWatchUrl('', entry.videoId))}">
               <div class="yds-video-name" data-tooltip="${escapeHtml(entry.title || entry.url || entry.videoId)}">${escapeHtml(entry.title || entry.url || entry.videoId)}</div>
               <div class="yds-channel-name" data-channel-id="${escapeHtml(entry.channelId || '')}" data-channel-name="${escapeHtml(entry.channelName || '')}">${escapeHtml(entry.channelName || '')}</div>
               <div class="yds-vote-state" aria-label="${entry.upvoted === true ? "Upvoted" : entry.downvoted === true ? "Downvoted" : "Neither"}">${getVoteIcon(entry)}</div>
