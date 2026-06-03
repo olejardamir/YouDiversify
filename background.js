@@ -42,6 +42,22 @@ async function setTemporaryWarningBadge() {
   await chrome.action.setIcon({ path: ICON_WARN });
 }
 
+function isYoutubeWatchUrl(url) {
+  try {
+    const parsed = new URL(url || "");
+    return parsed.protocol === "https:" &&
+      parsed.hostname === "www.youtube.com" &&
+      parsed.pathname === "/watch" &&
+      parsed.searchParams.has("v");
+  } catch {
+    return false;
+  }
+}
+
+function isYoutubeWatchTab(tab) {
+  return !!tab?.id && isYoutubeWatchUrl(tab.url);
+}
+
 async function findYoutubeTab() {
   const tabs = await chrome.tabs.query({ url: "https://www.youtube.com/watch*" });
   if (!tabs.length) return null;
@@ -49,16 +65,6 @@ async function findYoutubeTab() {
     tabs.find(tab => tab.active && tab.currentWindow) ||
     tabs.find(tab => tab.active) ||
     tabs[0];
-}
-
-async function findOverlayHostCandidates(activeTab) {
-  const youtubeTab = await findYoutubeTab();
-  const seen = new Set();
-  return [activeTab, youtubeTab].filter(tab => {
-    if (!canInjectInto(tab) || seen.has(tab.id)) return false;
-    seen.add(tab.id);
-    return true;
-  });
 }
 
 function canInjectInto(tab) {
@@ -94,8 +100,6 @@ async function hideOverlayEverywhere() {
 }
 
 async function toggleOverlayFromAction(activeTab) {
-  await chrome.action.setBadgeText({ text: "!" });
-  setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2000);
   await setBadge(await getEnabled());
   const tab = activeTab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (!tab || !canInjectInto(tab)) {
@@ -112,13 +116,11 @@ async function toggleOverlayFromAction(activeTab) {
     return;
   }
 
-  await chrome.action.setBadgeText({ text: "" });
   try {
-    await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_SHOW_OVERLAY" });
+    await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_GLOBAL_TOGGLE_OVERLAY" });
   } catch {
-    await chrome.action.setBadgeText({ text: "F" });
-    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2000);
-    await sendToTab(tab.id, { type: "YT_YOUDIVERSIFY_SHOW_OVERLAY" }).catch(() => null);
+    await setTemporaryWarningBadge();
+    setTimeout(async () => setBadge(await getEnabled()), 1600);
   }
 }
 
@@ -134,7 +136,7 @@ async function rememberOverlayTabForNavigation(tabId, command) {
 }
 
 async function restoreOverlayAfterNavigation(tabId, url) {
-  if (!tabId || !/^https:\/\/www\.youtube\.com\/watch/i.test(url || "")) return;
+  if (!tabId || !isYoutubeWatchUrl(url)) return;
 
   const state = await chrome.storage.local.get([OVERLAY_STATE_KEY, RESTORE_OVERLAY_TAB_ID_KEY]);
   if (state[RESTORE_OVERLAY_TAB_ID_KEY] !== tabId) return;
@@ -159,7 +161,7 @@ function scheduleOverlayRestore(tabId) {
   const delays = [250, 900, 1800, 3200, 5200];
   const timers = delays.map(delay => setTimeout(async () => {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
-    if (!tab?.url || !/^https:\/\/www\.youtube\.com\/watch/i.test(tab.url)) return;
+    if (!tab?.url || !isYoutubeWatchUrl(tab.url)) return;
 
     const result = await showOverlayOnTab(tabId).catch(() => null);
     if (result?.visible === true) {
@@ -188,8 +190,9 @@ async function showOverlayOnTab(tabId) {
   return { ok: true, visible: true };
 }
 
-async function relayToYoutube(message) {
-  const tab = await findYoutubeTab();
+async function relayToYoutube(message, preferredTabId) {
+  let tab = preferredTabId ? await chrome.tabs.get(preferredTabId).catch(() => null) : null;
+  if (!isYoutubeWatchTab(tab)) tab = await findYoutubeTab();
   if (!tab?.id) return { ok: false, error: "Open a YouTube video tab to control playback." };
   try {
     return await sendToTab(tab.id, message);
@@ -198,28 +201,36 @@ async function relayToYoutube(message) {
   }
 }
 
-async function openInYoutubeTab(url) {
+async function openInYoutubeTab(url, preferredTabId) {
   let safeUrl;
   try {
     safeUrl = new URL(url);
   } catch {
     return { ok: false, error: "Video URL is invalid." };
   }
-  if (!safeUrl.hostname.endsWith("youtube.com") || safeUrl.pathname !== "/watch") {
+  if (!["http:", "https:"].includes(safeUrl.protocol) || !/(^|\.)youtube\.com$/i.test(safeUrl.hostname) || safeUrl.pathname !== "/watch") {
     return { ok: false, error: "Only YouTube watch URLs can be opened." };
   }
-  safeUrl.hostname = "www.youtube.com";
+
   const videoId = safeUrl.searchParams.get("v");
   if (!videoId) return { ok: false, error: "Video URL is missing a video id." };
 
-  const tab = await findYoutubeTab();
+  safeUrl.protocol = "https:";
+  safeUrl.hostname = "www.youtube.com";
+  safeUrl.pathname = "/watch";
+  safeUrl.search = `?v=${encodeURIComponent(videoId)}`;
+  safeUrl.hash = "";
+
+  let tab;
+  if (preferredTabId) {
+    tab = await chrome.tabs.get(preferredTabId).catch(() => null);
+    if (!tab || !isYoutubeWatchTab(tab)) tab = await findYoutubeTab();
+  } else {
+    tab = await findYoutubeTab();
+  }
   if (!tab?.id) return { ok: false, error: "Open a YouTube video tab first." };
   await chrome.storage.local.set({
-    [FORCE_PLAY_ONCE_KEY]: {
-      videoId,
-      url: safeUrl.href,
-      createdAt: Date.now()
-    }
+    [FORCE_PLAY_ONCE_KEY]: { videoId, url: safeUrl.href, createdAt: Date.now() }
   });
   await chrome.tabs.update(tab.id, { url: safeUrl.href, active: true });
   if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
@@ -278,13 +289,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "YT_YOUDIVERSIFY_RELAY") {
       await rememberOverlayTabForNavigation(sender.tab?.id, message.command);
-      return await relayToYoutube(message.command || {});
+      return await relayToYoutube(message.command || {}, sender.tab?.id);
     }
 
     if (message?.type === "YT_YOUDIVERSIFY_FIND_TARGET") {
-      const tab = await findYoutubeTab();
+      let tab = sender.tab?.id ? await chrome.tabs.get(sender.tab.id).catch(() => null) : null;
+      if (!isYoutubeWatchTab(tab)) tab = await findYoutubeTab();
       if (!tab?.id) return { ok: false, error: "No YouTube video tab found." };
-      const state = await relayToYoutube({ type: "YT_YOUDIVERSIFY_GET_STATUS" });
+      const state = await relayToYoutube({ type: "YT_YOUDIVERSIFY_GET_STATUS" }, tab.id);
       return { ok: true, tabTitle: tab.title || "YouTube video tab", state };
     }
 
@@ -301,7 +313,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "YT_YOUDIVERSIFY_OPEN_VIDEO") {
-      return await openInYoutubeTab(message.url);
+      return await openInYoutubeTab(message.url, sender.tab?.id);
     }
 
     return undefined;

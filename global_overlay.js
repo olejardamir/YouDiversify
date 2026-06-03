@@ -11,10 +11,11 @@
   const PLAYLIST_INCLUDE_NEUTRAL_KEY = "yt_youdiversify_playlist_include_neutral";
   const PLAYLIST_SHUFFLE_KEY = "yt_youdiversify_playlist_shuffle";
   const PLAYLIST_REPEAT_KEY = "yt_youdiversify_playlist_repeat";
+  const FORCE_PLAY_ONCE_KEY = "yt_youdiversify_force_play_once";
   const THEME_KEY = "yt_youdiversify_theme";
   const OVERLAY_ID = "yt-youdiversify-floating-player";
   const STYLE_ID = "yt-youdiversify-global-overlay-style";
-  const DEFAULT_OVERLAY_STATE = { x: null, y: null, collapsed: false, visible: false, volumeOpen: false, managerOpen: false, managerX: null, managerY: null, managerWidth: null, managerHeight: null, managerSnapped: false, managerSnapX: null, managerSnapY: null };
+  const DEFAULT_OVERLAY_STATE = { x: null, y: null, collapsed: false, visible: false, managerOpen: false, managerX: null, managerY: null, managerWidth: null, managerHeight: null, managerSnapped: false, managerSnapX: null, managerSnapY: null };
 
   let enabled = true;
   let refreshTimer = null;
@@ -548,6 +549,22 @@
     await saveOverlayState({ managerOpen: false, managerSnapped: false, managerSnapX: null, managerSnapY: null });
   }
 
+  function normalizeYoutubeWatchUrl(value, videoId = "") {
+    try {
+      const url = new URL(value || `https://www.youtube.com/watch?v=${videoId}`);
+      if (!/(^|\.)youtube\.com$/i.test(url.hostname) || url.pathname !== "/watch") return "";
+      const id = url.searchParams.get("v") || videoId;
+      if (!id) return "";
+      url.protocol = "https:";
+      url.hostname = "www.youtube.com";
+      url.pathname = "/watch";
+      url.search = `?v=${encodeURIComponent(id)}`;
+      return url.href;
+    } catch {
+      return videoId ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}` : "";
+    }
+  }
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, char => ({
       "&": "&amp;",
@@ -576,19 +593,38 @@
       };
     }
     return {
-      videoId: (item?.videoId || item?.id || "").trim(),
-      title: item?.title || "",
-      url: item?.url || item?.href || "",
-      href: item?.href || item?.url || "",
+      videoId: asString(item?.videoId || item?.id).trim(),
+      title: asString(item?.title),
+      url: asString(item?.url || item?.href),
+      href: asString(item?.href || item?.url),
       upvoted: typeof item?.upvoted === "boolean" ? item.upvoted : null,
       downvoted: typeof item?.downvoted === "boolean" ? item.downvoted : null,
       userPressedNext: item?.userPressedNext === true,
-      channelId: item?.channelId || "",
-      channelName: item?.channelName || "",
+      channelId: asString(item?.channelId),
+      channelName: asString(item?.channelName),
       addedAt: item?.addedAt || 0,
       updatedAt: item?.updatedAt || item?.addedAt || 0,
       lastAccessedAt: item?.lastAccessedAt || item?.updatedAt || item?.addedAt || 0
     };
+  }
+
+  function asString(value) {
+    return typeof value === "string" ? value : "";
+  }
+
+  function normalizeChannelName(value) {
+    return asString(value).trim().replace(/^@/, "").replace(/\s+/g, " ").toLowerCase();
+  }
+
+  function isSameChannel(current, candidate) {
+    if (!current || !candidate) return false;
+    const currentId = asString(current.channelId);
+    const candidateId = asString(candidate.channelId);
+    if (currentId && candidateId && currentId === candidateId) return true;
+
+    const currentName = normalizeChannelName(current.channelName);
+    const candidateName = normalizeChannelName(candidate.channelName);
+    return !!currentName && !!candidateName && currentName === candidateName;
   }
 
   async function getVisitedEntries() {
@@ -617,8 +653,8 @@
       title: item.title || existing.title || "",
       url: item.url || item.href || existing.url || existing.href || "",
       href: item.href || item.url || existing.href || existing.url || "",
-      upvoted: item.upvoted === true || existing.upvoted === true ? true : typeof item.upvoted === "boolean" ? item.upvoted : existing.upvoted,
-      downvoted: item.downvoted === true || existing.downvoted === true ? true : typeof item.downvoted === "boolean" ? item.downvoted : existing.downvoted,
+      upvoted: typeof item.upvoted === "boolean" ? item.upvoted : existing.upvoted,
+      downvoted: typeof item.downvoted === "boolean" ? item.downvoted : existing.downvoted,
       userPressedNext: item.userPressedNext === true || existing.userPressedNext === true,
       channelId: item.channelId || existing.channelId || "",
       channelName: item.channelName || existing.channelName || "",
@@ -650,13 +686,31 @@
     return Array.from(byName.values());
   }
 
+  function normalizeBlockedChannel(item) {
+    return {
+      channelId: typeof item?.channelId === "string" ? item.channelId : "",
+      channelName: typeof item?.channelName === "string" ? item.channelName : "",
+      blockedAt: Number(item?.blockedAt || Date.now())
+    };
+  }
+
   async function getBlockedChannels() {
     const result = await safeStorageGet(BLOCKED_CHANNELS_KEY);
-    return Array.isArray(result[BLOCKED_CHANNELS_KEY]) ? result[BLOCKED_CHANNELS_KEY] : [];
+    return (Array.isArray(result[BLOCKED_CHANNELS_KEY]) ? result[BLOCKED_CHANNELS_KEY] : []).map(normalizeBlockedChannel).filter(c => c.channelId || c.channelName);
   }
 
   async function saveBlockedChannels(list) {
     await safeStorageSet({ [BLOCKED_CHANNELS_KEY]: list });
+  }
+
+  async function markForcePlayOnce(url) {
+    const safeUrl = normalizeYoutubeWatchUrl(url);
+    if (!safeUrl) return;
+    const videoId = new URL(safeUrl).searchParams.get("v");
+    if (!videoId) return;
+    await safeStorageSet({
+      [FORCE_PLAY_ONCE_KEY]: { videoId, url: safeUrl, createdAt: Date.now() }
+    });
   }
 
   async function getPlaylistMode() {
@@ -686,19 +740,21 @@
 
   async function blockChannel(channelId, channelName) {
     const list = await getBlockedChannels();
+    const normalizedName = normalizeChannelName(channelName);
     if (channelId && list.some(c => c.channelId === channelId)) return;
-    if (!channelId && channelName && list.some(c => !c.channelId && c.channelName?.toLowerCase() === channelName.toLowerCase())) return;
+    if (normalizedName && list.some(c => normalizeChannelName(c.channelName) === normalizedName)) return;
     list.push({ channelId, channelName, blockedAt: Date.now() });
     await saveBlockedChannels(list);
   }
 
   async function unblockChannel(channelId, channelName) {
     const list = await getBlockedChannels();
-    if (channelId) {
-      await saveBlockedChannels(list.filter(c => c.channelId !== channelId));
-    } else {
-      await saveBlockedChannels(list.filter(c => c.channelId || c.channelName?.toLowerCase() !== channelName.toLowerCase()));
-    }
+    const normalizedName = normalizeChannelName(channelName);
+    await saveBlockedChannels(list.filter(c => {
+      if (channelId && c.channelId === channelId) return false;
+      if (normalizedName && normalizeChannelName(c.channelName) === normalizedName) return false;
+      return true;
+    }));
   }
 
   function setTrackText(track, title) {
@@ -771,7 +827,11 @@
     const manager = overlay.querySelector(".yds-manager");
     if (!manager || manager.hidden) return;
 
-    const [entries, blocked, playlistMode] = await Promise.all([repairVisitedEntriesIfNeeded(), getBlockedChannels(), getPlaylistMode()]);
+    const [entries, blocked, playlistMode, target] = await Promise.all([
+      repairVisitedEntriesIfNeeded(), getBlockedChannels(), getPlaylistMode(),
+      safeSendMessage({ type: "YT_YOUDIVERSIFY_FIND_TARGET" }, { ok: false })
+    ]);
+    const currentChannel = target?.state?.channel || null;
     const grid = overlay.querySelector(".yds-manager-grid");
     const controls = overlay.querySelector(".yds-playlist-controls");
 
@@ -780,16 +840,17 @@
       const includeUpvoted = await getPlaylistIncludeUpvoted();
       const includeNeutral = await getPlaylistIncludeNeutral();
       const blockedChannelIds = new Set(blocked.map(c => c.channelId).filter(Boolean));
-      const blockedChannelNames = new Set(blocked.filter(c => !c.channelId).map(c => c.channelName.toLowerCase()));
+      const blockedChannelNames = new Set(blocked.map(c => normalizeChannelName(c.channelName)).filter(Boolean));
       const filtered = entries.filter(e => {
         if (e.downvoted) return false;
         if (e.upvoted) return includeUpvoted;
         return includeNeutral;
       }).filter(e => {
         const id = e.channelId || "";
-        const name = e.channelName || "";
+        const name = normalizeChannelName(e.channelName);
         if (id && blockedChannelIds.has(id)) return false;
-        if (!id && name && blockedChannelNames.has(name.toLowerCase())) return false;
+        if (name && blockedChannelNames.has(name)) return false;
+        if (isSameChannel(currentChannel, e)) return false;
         return true;
       });
       if (controls) controls.hidden = false;
@@ -806,7 +867,7 @@
             <div>Remove</div>
           </div>
           ${sortEntries(filtered, videoSortCol, videoSortDir).map(entry => `
-            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(entry.url || entry.href || `https://www.youtube.com/watch?v=${entry.videoId}`)}">
+            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(normalizeYoutubeWatchUrl(entry.url || entry.href, entry.videoId))}">
               <div class="yds-video-name" data-tooltip="${escapeHtml(entry.title || entry.url || entry.videoId)}">${escapeHtml(entry.title || entry.url || entry.videoId)}</div>
               <div class="yds-channel-name" data-channel-id="${escapeHtml(entry.channelId || '')}" data-channel-name="${escapeHtml(entry.channelName || '')}">${escapeHtml(entry.channelName || '')}</div>
               <div class="yds-vote-state" aria-label="${entry.upvoted === true ? "Upvoted" : entry.downvoted === true ? "Downvoted" : "Neither"}">${getVoteIcon(entry)}</div>
@@ -831,7 +892,7 @@
             <div>Remove</div>
           </div>
           ${sortEntries(entries, videoSortCol, videoSortDir).map(entry => `
-            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(entry.url || entry.href || `https://www.youtube.com/watch?v=${entry.videoId}`)}">
+            <div class="yds-manager-row" data-video-id="${escapeHtml(entry.videoId)}" data-video-url="${escapeHtml(normalizeYoutubeWatchUrl(entry.url || entry.href, entry.videoId))}">
               <div class="yds-video-name" data-tooltip="${escapeHtml(entry.title || entry.url || entry.videoId)}">${escapeHtml(entry.title || entry.url || entry.videoId)}</div>
               <div class="yds-channel-name" data-channel-id="${escapeHtml(entry.channelId || '')}" data-channel-name="${escapeHtml(entry.channelName || '')}">${escapeHtml(entry.channelName || '')}</div>
               <div class="yds-vote-state" aria-label="${entry.upvoted === true ? "Upvoted" : entry.downvoted === true ? "Downvoted" : "Neither"}">${getVoteIcon(entry)}</div>
@@ -845,7 +906,7 @@
 
       const blockedContainer = overlay.querySelector(".yds-manager-blocked");
       const blockedGrid = overlay.querySelector(".yds-manager-blocked-grid");
-      if (blocked.length && entries.length >= 10) {
+      if (blocked.length) {
         blockedContainer.hidden = false;
         blockedGrid.innerHTML = `<div class="yds-blocked-row yds-blocked-head"><div class="yds-sortable" data-col="blocked-name"><span>Blocked Channels</span>${getBlockedSortIcon()}</div><div>Remove</div></div>` +
           sortBlockedChannels(blocked, blockedSortDir).map(c => `
@@ -866,7 +927,7 @@
     await renderManager(overlay);
   }
 
-async function removeManagerEntry(videoId) {
+  async function removeManagerEntry(videoId) {
     const entries = await getVisitedEntries();
     await saveVisitedEntries(entries.filter(entry => entry.videoId !== videoId));
   }
@@ -896,7 +957,7 @@ async function removeManagerEntry(videoId) {
     if (!Array.isArray(entries)) throw new Error("Imported file does not contain a video list.");
     await saveVisitedEntries(entries);
     if (Array.isArray(parsed.blockedChannels)) {
-      await saveBlockedChannels(parsed.blockedChannels);
+      await saveBlockedChannels(parsed.blockedChannels.map(normalizeBlockedChannel).filter(c => c.channelId || c.channelName));
     }
     if (parsed.playlist) {
       const p = parsed.playlist;
@@ -1065,7 +1126,7 @@ async function removeManagerEntry(videoId) {
     overlay.querySelector(".yds-volume-toggle")?.classList.toggle("red", !!state?.muted || volume === 0);
 
     const canSeek = controlsEnabled && duration > 0;
-    overlay.querySelectorAll(".yds-play,.yds-up,.yds-down,.yds-next,.yds-next-untracked").forEach(btn => { btn.disabled = !controlsEnabled; });
+    overlay.querySelectorAll(".yds-play,.yds-up,.yds-down,.yds-channel,.yds-next,.yds-next-untracked,.yds-volume-toggle").forEach(btn => { btn.disabled = !controlsEnabled; });
     overlay.querySelectorAll(".yds-slider").forEach(slider => { slider.disabled = !canSeek; });
     const volumeRange = overlay.querySelector(".yds-volume-slider");
     if (volumeRange) volumeRange.disabled = !controlsEnabled;
@@ -1154,7 +1215,6 @@ async function removeManagerEntry(videoId) {
       panel.style.left = `${Math.max(0, b.right - o.left + 6)}px`;
       panel.style.top = `${Math.max(0, b.top - o.top - 52)}px`;
     }
-    saveOverlayState({ volumeOpen: false });
   }
 
   function hideVolumePanel(overlay) {
@@ -1386,10 +1446,21 @@ async function removeManagerEntry(videoId) {
       event.stopPropagation();
 
       const row = title.closest(".yds-manager-row[data-video-url]");
-      const url = row?.dataset?.videoUrl;
-      if (!url) return;
-      const response = await safeSendMessage({ type: "YT_YOUDIVERSIFY_OPEN_VIDEO", url }, { ok: false, error: "Could not open video." });
-      setStatus(response?.ok ? "Opening video." : response?.error || "Could not open video.");
+      const url = normalizeYoutubeWatchUrl(row?.dataset?.videoUrl, row?.dataset?.videoId);
+      if (!url) {
+        setStatus("Could not open video.");
+        return;
+      }
+
+      const response = await safeSendMessage({ type: "YT_YOUDIVERSIFY_OPEN_VIDEO", url }, { ok: false });
+      if (response?.ok) {
+        setStatus("Opening video.");
+      } else if (location.hostname === "www.youtube.com") {
+        await markForcePlayOnce(url);
+        window.location.href = url;
+      } else {
+        setStatus(response?.error || "Open a YouTube video tab first.");
+      }
     });
 
     const closeOnOutsidePointer = (event) => {

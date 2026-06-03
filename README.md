@@ -16,12 +16,13 @@ From that point, the extension grew naturally around the functions that were nee
 
 ## What It Does
 
-YouDiversify is a Chrome/Chromium extension that adds a small floating player and management panel on YouTube watch pages.
+YouDiversify is a Chrome/Chromium extension that adds a toolbar-opened floating player and management panel for controlling an open YouTube watch tab.
 
 Its main purpose is to help you move through YouTube recommendations while avoiding:
 
 - videos you already visited
 - videos you downvoted
+- the channel currently playing
 - channels you blocked
 - YouTube Mix videos
 - repeated suggestions from the right-hand recommendation panel
@@ -30,16 +31,16 @@ It is designed for passive music discovery: open YouTube, start listening, and l
 
 ## Main Features
 
-- Floating draggable player on YouTube watch pages.
+- Floating draggable player for controlling a YouTube watch tab.
 - Collapsed mini-player mode.
 - Light and dark mode.
-- Browser toolbar badge showing `ON` or `OFF`.
+- Browser toolbar icon and title showing enabled/disabled state.
 - Extension power toggle.
 - Play/pause, seek, volume, upvote, downvote, and skip controls.
 - Downvote-and-skip flow.
 - Automatic skip when an already-downvoted video loads.
 - Automatic skip when the current video ends.
-- Skip-to-next unvisited recommendation.
+- Skip-to-next unvisited recommendation from a different channel.
 - Green `?` skip button for untracked skipping.
 - Channel blocking from the current video.
 - Automatic right-panel cleanup for blocked channels.
@@ -56,7 +57,7 @@ It is designed for passive music discovery: open YouTube, start listening, and l
 
 ## The Floating Player
 
-Click the extension icon in the browser toolbar to open the floating player.
+Click the extension icon in the browser toolbar to open or close the floating player.
 
 The player can be dragged around the page. It has controls for playback, voting, skipping, volume, theme, and the management grid.
 
@@ -80,23 +81,25 @@ The main player includes:
 - Upvote: clicks YouTube's like button and stores that state.
 - Downvote: clicks YouTube's dislike button, stores that state, and skips.
 - Block channel: stores the current channel as blocked, dislikes the current video, and skips.
-- Skip next: skips to the next unvisited, non-Mix recommendation.
-- Green `?` skip: skips without keeping the current or destination video in the manager list.
+- Skip next: skips to the next unvisited, non-Mix recommendation from a different channel.
+- Green `?` skip: skips to a different-channel recommendation without keeping the current or destination video in the manager list.
 - Volume: opens a vertical volume slider.
 - Seek: moves through the current video.
 - Management grid: opens or closes the manager window.
 - Collapse/expand: switches between full and mini player.
 - Close: closes the floating player.
 
-The popup player also includes basic playback, voting, skip, channel block, reset, and seek controls.
 
-## Power And Badge States
 
-The browser toolbar badge shows:
+## Power And Icon States
 
-- `ON`: extension behavior is active.
-- `OFF`: extension behavior is disabled.
-- `!`: short temporary warning when the extension cannot act on the current tab.
+The browser toolbar icon shows the extension state:
+
+- **Green icon**: extension behavior is active.
+- **Grey icon**: extension behavior is disabled.
+- **Orange icon**: short temporary warning when the extension cannot act on the current tab (resets after 1.6 seconds).
+
+The toolbar tooltip also reflects the ON/OFF state.
 
 When the extension is off, playback controls that depend on the content script are disabled or return an off-state message. The theme and close controls remain available.
 
@@ -116,7 +119,7 @@ It stores metadata such as:
 
 The grid can be sorted, cleaned, imported, and exported.
 
-Duplicate entries are deduped by video id.
+Duplicate entries are deduped by video id, and entries with the same title/channel are merged to reduce repeated recommendation variants.
 
 The manager window can be dragged and resized. It can also snap near the player, including below it. The player is always kept visually above the manager window.
 
@@ -146,6 +149,7 @@ Playlist mode uses the manager list as a local playlist source.
 It filters out:
 
 - downvoted videos
+- videos from the channel currently playing
 - blocked channels
 - videos excluded by the current playlist filters
 
@@ -167,6 +171,8 @@ While a video is playing, the extension silently watches only the right-side rec
 1. `Don't recommend channel`
 2. `Not interested`
 
+It stops after one successful automatic blocked-channel action per video, so it does not repeatedly operate on the recommendation panel during the same watch session.
+
 This is intentionally limited to the right-side panel because that is where this workflow is meant to happen.
 
 The extension restores the right-panel scroll position after it performs one of these automatic menu actions.
@@ -175,12 +181,12 @@ The extension restores the right-panel scroll position after it performs one of 
 
 There are two skip styles:
 
-- Normal skip: goes to the next unvisited, non-Mix recommendation and tracks it.
-- Green `?` skip: goes to the next recommendation without keeping the current or destination video in the manager list.
+- Normal skip: goes to the next unvisited, non-Mix recommendation from a different channel and tracks it.
+- Green `?` skip: goes to a different-channel recommendation without keeping the current or destination video in the manager list.
 
 The green `?` button is useful when you want to jump without affecting the discovery history.
 
-Normal skip saves the current video metadata and stores the destination as visited before navigating.
+Normal skip saves the current video metadata before navigating. The destination is tracked when that video loads.
 
 The green `?` skip removes the current and destination video ids from the manager list and suppresses automatic tracking when the destination loads.
 
@@ -204,7 +210,7 @@ The manager can export a JSON file containing:
 - blocked channels
 - playlist settings
 
-The manager can import the same format. Imported video entries are normalized and deduped by video id.
+The manager can import the same format. Imported video entries are normalized, deduped by video id, and same title/channel variants are merged.
 
 The reset button clears the manager video list and blocked-channel list.
 
@@ -217,7 +223,7 @@ This is an unpacked Chrome extension.
 3. Click `Load unpacked`.
 4. Select this folder.
 5. Open a YouTube watch page.
-6. Click the extension icon to open the floating player.
+6. Click the extension icon to open or close the floating player.
 
 After updating the files, reload the extension from `chrome://extensions/` and refresh any open YouTube tabs.
 
@@ -230,8 +236,8 @@ It does not require an external server. The manager list, blocked channels, pref
 Stored data includes:
 
 - extension enabled state
-- visited videos
-- blocked channels
+- visited video IDs, titles, URLs, and vote state
+- blocked channel IDs and names
 - playlist mode
 - playlist include-upvoted setting
 - playlist include-neutral setting
@@ -243,7 +249,7 @@ Stored data includes:
 - light/dark theme
 - short-lived navigation markers for forced play and untracked skip
 
-No account credentials are stored by the extension.
+No account credentials, analytics, telemetry, or browsing history are collected by the extension.
 
 ## Permissions
 
@@ -254,7 +260,7 @@ The extension uses Chrome extension permissions for:
 - script injection for the floating overlay
 - active tab access
 
-The manifest includes broad host permissions so the floating overlay can be injected into eligible pages when opened from the toolbar, but the core content script is designed around YouTube watch pages.
+The `https://www.youtube.com/*` host permission is limited to YouTube. The content script runs only on YouTube watch pages, and `activeTab` plus `scripting` allow the floating overlay to be injected into the currently active tab when you click the toolbar icon.
 
 ## Notes And Limitations
 

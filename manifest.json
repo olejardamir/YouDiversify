@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "YouDiversify",
   "version": "1.2.4",
-  "description": "Floating draggable YouTube controls that appear only when opened from the browser toolbar button.",
+  "description": "Floating draggable YouTube controls toggled from the browser toolbar button.",
   "permissions": [
     "storage",
     "tabs",
@@ -25,7 +25,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Open YouDiversify floating player"
+    "default_title": "Toggle YouDiversify floating player"
   },
   "background": {
     "service_worker": "background.js"

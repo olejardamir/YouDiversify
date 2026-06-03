@@ -1,6 +1,7 @@
 (() => {
   const VISITED_KEY = "yt_youdiversify_visited";
   const ENABLED_KEY = "yt_youdiversify_enabled";
+  const OVERLAY_STATE_KEY = "yt_youdiversify_overlay_state";
   const FORCE_PLAY_ONCE_KEY = "yt_youdiversify_force_play_once";
   const UNTRACKED_SKIP_ONCE_KEY = "yt_youdiversify_untracked_skip_once";
   const BLOCKED_CHANNELS_KEY = "yt_youdiversify_blocked_channels";
@@ -22,6 +23,7 @@
   let rightPanelBlockObserver = null;
   let rightPanelBlockTimer = null;
   let rightPanelBlockRunning = false;
+  let rightPanelBlockDone = false;
   let rightPanelBlockScheduled = false;
   let rightPanelLastVideoId = "";
   const rightPanelBlockAttempts = new Map();
@@ -59,7 +61,9 @@
   }
 
   function isWatchPage() {
-    return location.hostname.includes("youtube.com") && location.pathname === "/watch";
+    return location.hostname === "www.youtube.com" &&
+      location.pathname === "/watch" &&
+      new URLSearchParams(location.search).has("v");
   }
 
   function getVideoIdFromUrl(url = location.href) {
@@ -73,6 +77,10 @@
   async function getEnabled() {
     const result = await chrome.storage.local.get(ENABLED_KEY);
     return result[ENABLED_KEY] !== false;
+  }
+
+  function asString(value) {
+    return typeof value === "string" ? value : "";
   }
 
   async function getVisitedEntries() {
@@ -96,18 +104,18 @@
         };
       }
       return {
-        videoId: (item.videoId || item.id || "").trim(),
-        title: item.title || "",
-        url: item.url || item.href || "",
-        href: item.href || item.url || "",
-        upvoted: typeof item.upvoted === "boolean" ? item.upvoted : null,
-        downvoted: typeof item.downvoted === "boolean" ? item.downvoted : null,
-        userPressedNext: item.userPressedNext === true,
-        channelId: item.channelId || "",
-        channelName: item.channelName || "",
-        addedAt: item.addedAt || 0,
-        updatedAt: item.updatedAt || item.addedAt || 0,
-        lastAccessedAt: item.lastAccessedAt || item.updatedAt || item.addedAt || 0
+        videoId: asString(item?.videoId || item?.id).trim(),
+        title: asString(item?.title),
+        url: asString(item?.url || item?.href),
+        href: asString(item?.href || item?.url),
+        upvoted: typeof item?.upvoted === "boolean" ? item.upvoted : null,
+        downvoted: typeof item?.downvoted === "boolean" ? item.downvoted : null,
+        userPressedNext: item?.userPressedNext === true,
+        channelId: asString(item?.channelId),
+        channelName: asString(item?.channelName),
+        addedAt: item?.addedAt || 0,
+        updatedAt: item?.updatedAt || item?.addedAt || 0,
+        lastAccessedAt: item?.lastAccessedAt || item?.updatedAt || item?.addedAt || 0
       };
     }).filter(item => item.videoId);
     return dedupeVisitedEntries(normalized);
@@ -120,8 +128,8 @@
       title: item.title || existing.title || "",
       url: item.url || item.href || existing.url || existing.href || "",
       href: item.href || item.url || existing.href || existing.url || "",
-      upvoted: item.upvoted === true || existing.upvoted === true ? true : typeof item.upvoted === "boolean" ? item.upvoted : existing.upvoted,
-      downvoted: item.downvoted === true || existing.downvoted === true ? true : typeof item.downvoted === "boolean" ? item.downvoted : existing.downvoted,
+      upvoted: typeof item.upvoted === "boolean" ? item.upvoted : existing.upvoted,
+      downvoted: typeof item.downvoted === "boolean" ? item.downvoted : existing.downvoted,
       userPressedNext: item.userPressedNext === true || existing.userPressedNext === true,
       channelId: item.channelId || existing.channelId || "",
       channelName: item.channelName || existing.channelName || "",
@@ -177,8 +185,8 @@
       title: title || existing?.title || "",
       url: url || existing?.url || existing?.href || "",
       href: url || existing?.href || existing?.url || "",
-      upvoted: metadata.upvoted === true || existing?.upvoted === true ? true : typeof metadata.upvoted === "boolean" ? metadata.upvoted : existing?.upvoted ?? null,
-      downvoted: metadata.downvoted === true || existing?.downvoted === true ? true : typeof metadata.downvoted === "boolean" ? metadata.downvoted : existing?.downvoted ?? null,
+      upvoted: typeof metadata.upvoted === "boolean" ? metadata.upvoted : existing?.upvoted ?? null,
+      downvoted: typeof metadata.downvoted === "boolean" ? metadata.downvoted : existing?.downvoted ?? null,
       userPressedNext: metadata.userPressedNext === true || existing?.userPressedNext === true,
       channelId: metadata.channelId || existing?.channelId || "",
       channelName: metadata.channelName || existing?.channelName || "",
@@ -215,17 +223,17 @@
     const dislikeState = getDislikeButtonState();
 
     if (typeof nextMetadata.upvoted !== "boolean") {
-      if (existing?.upvoted != null) {
-        nextMetadata.upvoted = existing.upvoted;
-      } else if (likeState?.ready) {
+      if (likeState?.ready) {
         nextMetadata.upvoted = likeState.liked;
+      } else if (existing?.upvoted != null) {
+        nextMetadata.upvoted = existing.upvoted;
       }
     }
     if (typeof nextMetadata.downvoted !== "boolean") {
-      if (existing?.downvoted != null) {
-        nextMetadata.downvoted = existing.downvoted;
-      } else if (dislikeState?.ready) {
+      if (dislikeState?.ready) {
         nextMetadata.downvoted = dislikeState.downvoted;
+      } else if (existing?.downvoted != null) {
+        nextMetadata.downvoted = existing.downvoted;
       }
     }
 
@@ -246,33 +254,41 @@
   async function consumeForcePlayOnce(videoId = getVideoIdFromUrl()) {
     if (!videoId) return false;
 
-    const result = await chrome.storage.local.get(FORCE_PLAY_ONCE_KEY);
-    const force = result[FORCE_PLAY_ONCE_KEY];
-    if (!force) return false;
+    try {
+      const result = await chrome.storage.local.get(FORCE_PLAY_ONCE_KEY);
+      const force = result[FORCE_PLAY_ONCE_KEY];
+      if (!force) return false;
 
-    const expired = Date.now() - Number(force.createdAt || 0) > FORCE_PLAY_ONCE_MAX_AGE_MS;
-    const matches = force.videoId === videoId;
-    if (expired || matches) {
-      await chrome.storage.local.remove(FORCE_PLAY_ONCE_KEY);
+      const expired = Date.now() - Number(force.createdAt || 0) > FORCE_PLAY_ONCE_MAX_AGE_MS;
+      const matches = force.videoId === videoId;
+      if (expired || matches) {
+        await chrome.storage.local.remove(FORCE_PLAY_ONCE_KEY);
+      }
+
+      return matches && !expired;
+    } catch {
+      return false;
     }
-
-    return matches && !expired;
   }
 
   async function consumeUntrackedSkipOnce(videoId = getVideoIdFromUrl()) {
     if (!videoId) return false;
 
-    const result = await chrome.storage.local.get(UNTRACKED_SKIP_ONCE_KEY);
-    const marker = result[UNTRACKED_SKIP_ONCE_KEY];
-    if (!marker) return false;
+    try {
+      const result = await chrome.storage.local.get(UNTRACKED_SKIP_ONCE_KEY);
+      const marker = result[UNTRACKED_SKIP_ONCE_KEY];
+      if (!marker) return false;
 
-    const expired = Date.now() - Number(marker.createdAt || 0) > FORCE_PLAY_ONCE_MAX_AGE_MS;
-    const matches = marker.videoId === videoId;
-    if (expired || matches) {
-      await chrome.storage.local.remove(UNTRACKED_SKIP_ONCE_KEY);
+      const expired = Date.now() - Number(marker.createdAt || 0) > FORCE_PLAY_ONCE_MAX_AGE_MS;
+      const matches = marker.videoId === videoId;
+      if (expired || matches) {
+        await chrome.storage.local.remove(UNTRACKED_SKIP_ONCE_KEY);
+      }
+
+      return matches && !expired;
+    } catch {
+      return false;
     }
-
-    return matches && !expired;
   }
 
   function getChannelInfo() {
@@ -289,9 +305,17 @@
     return channelId || channelName ? { channelId, channelName } : null;
   }
 
+  function normalizeBlockedChannel(item) {
+    return {
+      channelId: typeof item?.channelId === "string" ? item.channelId : "",
+      channelName: typeof item?.channelName === "string" ? item.channelName : "",
+      blockedAt: Number(item?.blockedAt || Date.now())
+    };
+  }
+
   async function getBlockedChannels() {
     const result = await chrome.storage.local.get(BLOCKED_CHANNELS_KEY);
-    return Array.isArray(result[BLOCKED_CHANNELS_KEY]) ? result[BLOCKED_CHANNELS_KEY] : [];
+    return (Array.isArray(result[BLOCKED_CHANNELS_KEY]) ? result[BLOCKED_CHANNELS_KEY] : []).map(normalizeBlockedChannel).filter(c => c.channelId || c.channelName);
   }
 
   async function saveBlockedChannels(list) {
@@ -300,25 +324,30 @@
 
   async function blockChannel(channelId, channelName) {
     const list = await getBlockedChannels();
+    const normalizedName = normalizeChannelText(channelName);
     if (channelId && list.some(c => c.channelId === channelId)) return;
-    if (!channelId && channelName && list.some(c => !c.channelId && c.channelName?.toLowerCase() === channelName.toLowerCase())) return;
+    if (normalizedName && list.some(c => normalizeChannelText(c.channelName) === normalizedName)) return;
     list.push({ channelId, channelName, blockedAt: Date.now() });
     await saveBlockedChannels(list);
   }
 
   async function unblockChannel(channelId, channelName) {
     const list = await getBlockedChannels();
-    if (channelId) {
-      await saveBlockedChannels(list.filter(c => c.channelId !== channelId));
-    } else {
-      await saveBlockedChannels(list.filter(c => c.channelId || c.channelName?.toLowerCase() !== channelName.toLowerCase()));
-    }
+    const normalizedName = normalizeChannelText(channelName);
+    await saveBlockedChannels(list.filter(c => {
+      if (channelId && c.channelId === channelId) return false;
+      if (normalizedName && normalizeChannelText(c.channelName) === normalizedName) return false;
+      return true;
+    }));
   }
 
   async function isChannelBlocked(channelId, channelName) {
     const list = await getBlockedChannels();
-    return list.some(c => c.channelId && c.channelId === channelId) ||
-      (channelName && list.some(c => !c.channelId && c.channelName.toLowerCase() === channelName.toLowerCase()));
+    const normalizedName = normalizeChannelText(channelName);
+    return list.some(c =>
+      (channelId && c.channelId === channelId) ||
+      (normalizedName && normalizeChannelText(c.channelName) === normalizedName)
+    );
   }
 
   async function getPlaylistMode() {
@@ -389,9 +418,10 @@
     const [includeUpvoted, includeNeutral, shuffle, repeat, blocked] = await Promise.all([
       getPlaylistIncludeUpvoted(), getPlaylistIncludeNeutral(), getPlaylistShuffle(), getPlaylistRepeat(), getBlockedChannels()
     ]);
+    const currentChannel = getChannelInfo();
 
     const blockedChannelIds = new Set(blocked.map(c => c.channelId).filter(Boolean));
-    const blockedChannelNames = new Set(blocked.filter(c => !c.channelId).map(c => c.channelName.toLowerCase()));
+    const blockedChannelNames = new Set(blocked.map(c => normalizeChannelText(c.channelName)).filter(Boolean));
 
     let playlist = entries.filter(e => {
       if (e.downvoted) return false;
@@ -399,9 +429,10 @@
       return includeNeutral;
     }).filter(e => {
       const id = e.channelId || "";
-      const name = e.channelName || "";
+      const name = normalizeChannelText(e.channelName);
       if (id && blockedChannelIds.has(id)) return false;
-      if (!id && name && blockedChannelNames.has(name.toLowerCase())) return false;
+      if (name && blockedChannelNames.has(name)) return false;
+      if (isSameChannel(currentChannel, e)) return false;
       return true;
     });
 
@@ -609,6 +640,9 @@
 
     const ariaPressed = stateElement?.getAttribute("aria-pressed");
 
+    if (ariaPressed === "true") return { button, ready: true, downvoted: true };
+    if (ariaPressed === "false") return { button, ready: true, downvoted: false };
+
     const textState = stateCandidates.map(element => [
       element.getAttribute?.("aria-label"),
       element.getAttribute?.("title"),
@@ -663,7 +697,7 @@
     if (!state?.button) return { ok: false, error: "Dislike button is not available yet." };
     if (!state.ready) return { ok: false, error: "Dislike button state is not available yet." };
     if (state.downvoted) {
-      await saveCurrentVideoMetadata({ downvoted: true });
+      await saveCurrentVideoMetadata({ downvoted: true, upvoted: false });
       return { ok: true, downvoted: true };
     }
     state.button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", isPrimary: true }));
@@ -671,7 +705,7 @@
     state.button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", isPrimary: true }));
     state.button.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
     state.button.click();
-    await saveCurrentVideoMetadata({ downvoted: true });
+    await saveCurrentVideoMetadata({ downvoted: true, upvoted: false });
     return { ok: true, downvoted: true };
   }
 
@@ -717,6 +751,17 @@
 
   function normalizeChannelText(text) {
     return (text || "").trim().replace(/^@/, "").replace(/\s+/g, " ").toLowerCase();
+  }
+
+  function isSameChannel(current, candidate) {
+    if (!current || !candidate) return false;
+    const currentId = current.channelId || "";
+    const candidateId = candidate.channelId || "";
+    if (currentId && candidateId && currentId === candidateId) return true;
+
+    const currentName = normalizeChannelText(current.channelName);
+    const candidateName = normalizeChannelText(candidate.channelName);
+    return !!currentName && !!candidateName && currentName === candidateName;
   }
 
   function extractVideoData(item) {
@@ -862,17 +907,21 @@
 
   async function blockVisibleRightPanelChannels() {
     if (rightPanelBlockRunning || !enabled || !isWatchPage()) return;
+
+    const currentVideoId = getVideoIdFromUrl() || "";
+    if (currentVideoId !== rightPanelLastVideoId) {
+      rightPanelLastVideoId = currentVideoId;
+      rightPanelBlockAttempts.clear();
+      rightPanelBlockDone = false;
+    }
+
+    if (rightPanelBlockDone) return;
+
     const video = getVideo();
     if (!video || video.paused) return;
 
     rightPanelBlockRunning = true;
     try {
-      const currentVideoId = getVideoIdFromUrl() || "";
-      if (currentVideoId !== rightPanelLastVideoId) {
-        rightPanelLastVideoId = currentVideoId;
-        rightPanelBlockAttempts.clear();
-      }
-
       const blocked = await getBlockedChannels();
       if (!blocked.length) return;
 
@@ -896,7 +945,7 @@
         rightPanelBlockAttempts.set(attemptKey, Date.now());
         await sleep(250);
         restoreRightPanelScrollPosition(scrollPosition);
-        if (clickedAction) scheduleRightPanelBlockScan(700);
+        if (clickedAction) rightPanelBlockDone = true;
         return;
       }
     } finally {
@@ -931,9 +980,10 @@
     const entries = await getVisitedEntries();
     const managedById = new Map(entries.map(item => [item.videoId, item]));
     const currentId = getVideoIdFromUrl();
+    const currentChannel = getChannelInfo();
     const blocked = await getBlockedChannels();
     const blockedChannelIds = new Set(blocked.map(c => c.channelId).filter(Boolean));
-    const blockedChannelNames = new Set(blocked.filter(c => !c.channelId).map(c => c.channelName.toLowerCase()));
+    const blockedChannelNames = new Set(blocked.map(c => normalizeChannelText(c.channelName)).filter(Boolean));
 
     for (const item of getRecommendationItems()) {
       const data = extractVideoData(item);
@@ -944,9 +994,10 @@
       if (isMixVideo(data)) continue;
       const entry = managedById.get(data.videoId);
       const entryChannelId = data.channelId || entry?.channelId || "";
-      const entryChannelName = data.channelName || entry?.channelName || "";
+      const entryChannelName = normalizeChannelText(data.channelName || entry?.channelName || "");
       if (entryChannelId && blockedChannelIds.has(entryChannelId)) continue;
-      if (!entryChannelId && entryChannelName && blockedChannelNames.has(entryChannelName.toLowerCase())) continue;
+      if (entryChannelName && blockedChannelNames.has(entryChannelName)) continue;
+      if (isSameChannel(currentChannel, data)) continue;
       return data;
     }
 
@@ -1019,7 +1070,6 @@
       }
 
       if (!next) {
-        alert("There is nothing new to play.");
         return { ok: false, error: "There is nothing new to play." };
       }
 
@@ -1051,7 +1101,6 @@
       }
 
       if (!next) {
-        alert("There is nothing new to play.");
         return { ok: false, error: "There is nothing new to play." };
       }
 
@@ -1083,7 +1132,10 @@
   }
 
   function isUserPressedNextReason(reason) {
-    return reason === "button" || reason === "overlay-skip" || reason === "popup-skip" || reason === "manual";
+    return reason === "button" ||
+      reason === "overlay-skip" ||
+      reason === "overlay-dislike" ||
+      reason === "manual";
   }
 
   function attachVideoEndListener() {
@@ -1148,9 +1200,18 @@
     controlDetectionActive = true;
     await notifyPlaybackWaiting();
 
+    const started = Date.now();
+    const maxWaitMs = 10000;
+
     try {
       while (enabled && isWatchPage() && token === startupPauseToken) {
         pauseVideoIfPossible();
+
+        if (Date.now() - started > maxWaitMs) {
+          await saveCurrentVideoMetadata({});
+          await playVideoIfStillCurrent(token);
+          return;
+        }
 
         const dislikeState = await waitForDislikeButtonState(token);
         if (dislikeState?.ready) {
@@ -1178,7 +1239,7 @@
       const button = event.target.closest?.("dislike-button-view-model button, button[aria-label*='Dislike']");
       if (!button) return;
       const wasDownvoted = getDislikeButtonState(button)?.downvoted === true;
-      await saveCurrentVideoMetadata({ downvoted: !wasDownvoted });
+      await saveCurrentVideoMetadata({ downvoted: !wasDownvoted, upvoted: !wasDownvoted ? false : undefined });
       if (!wasDownvoted) {
         await skipToNextPlayableVideo("dislike-click");
       }
@@ -1191,7 +1252,8 @@
       const button = event.target.closest?.("like-button-view-model button, button[aria-label*='like this video' i]");
       if (!button) return;
       await sleep(80);
-      await saveCurrentVideoMetadata({ upvoted: isCurrentVideoLiked() });
+      const liked = isCurrentVideoLiked();
+      await saveCurrentVideoMetadata({ upvoted: liked, downvoted: liked ? false : undefined });
     }, true);
   }
 
@@ -1246,289 +1308,9 @@
 
 
 
-  const OVERLAY_STATE_KEY = "yt_youdiversify_overlay_state";
-  const OVERLAY_ID = "yt-youdiversify-floating-player";
-  let overlayRefreshTimer = null;
-  let overlayDrag = null;
-
-  const ICONS = {
-    power: '<svg viewBox="0 0 24 24"><path d="M11 2h2v10h-2V2Zm6.5 3.9-1.4 1.4A7 7 0 1 1 7.9 7.3L6.5 5.9a9 9 0 1 0 11 0Z"/></svg>',
-    play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5Z"/></svg>',
-    pause: '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z"/></svg>',
-    up: '<svg viewBox="0 0 24 24"><path d="M2 21h4V9H2v12Zm20-11c0-1.1-.9-2-2-2h-6.3l1-4.6.03-.32c0-.41-.17-.79-.44-1.06L13.2 1 6.6 7.6C6.22 7.97 6 8.47 6 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2Z"/></svg>',
-    down: '<svg viewBox="0 0 24 24"><path d="M22 3h-4v12h4V3ZM2 14c0 1.1.9 2 2 2h6.3l-1 4.6-.03.32c0 .41.17.79.44 1.06L10.8 23l6.6-6.6c.38-.37.6-.87.6-1.4V5c0-1.1-.9-2-2-2H7c-.83 0-1.54.5-1.84 1.22L2.14 11.27c-.09.23-.14.47-.14.73v2Z"/></svg>',
-    next: '<svg viewBox="0 0 24 24"><path d="M5 4v16l10-8L5 4Zm11 0h3v16h-3V4Z"/></svg>',
-    reset: '<svg viewBox="0 0 24 24"><path d="M12 5V2L7 7l5 5V9c2.76 0 5 2.24 5 5a5 5 0 0 1-8.66 3.4l-1.42 1.42A7 7 0 1 0 12 5Z"/></svg>',
-    channel: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/></svg>',
-    collapse: '<svg viewBox="0 0 24 24"><path d="M7 10h10v4H7v-4Z"/></svg>',
-    expand: '<svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5Z"/></svg>',
-    close: '<svg viewBox="0 0 24 24"><path d="m6.4 5 12.6 12.6-1.4 1.4L5 6.4 6.4 5Zm12.6 1.4L6.4 19 5 17.6 17.6 5 19 6.4Z"/></svg>',
-    seek: '<svg viewBox="0 0 24 24"><path d="M4 6h10v2H4V6Zm0 5h16v2H4v-2Zm0 5h7v2H4v-2Zm13.5-10a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Zm-3 10a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>'
-  };
-
-  function ensureOverlayStyles() {
-    let style = document.getElementById("yt-youdiversify-overlay-style");
-    if (!style) {
-      style = document.createElement("style");
-      style.id = "yt-youdiversify-overlay-style";
-      document.documentElement.appendChild(style);
-    }
-    style.textContent = `
-      #${OVERLAY_ID} {
-        position: fixed; right: 24px; bottom: 24px; z-index: 2147483647;
-        width: 318px; color: #f3f4f6; background: #111316; border: 1px solid #2a2f3a;
-        box-shadow: 0 18px 48px rgba(0,0,0,.46);
-        font: 13px/1.4 Arial, sans-serif; overflow: hidden; user-select: none;
-      }
-      #${OVERLAY_ID}.collapsed { width: auto; }
-      #${OVERLAY_ID}, #${OVERLAY_ID} *:not(button) { border-radius: 0 !important; }
-      #${OVERLAY_ID} svg { width: 22px; height: 22px; fill: currentColor; pointer-events: none; }
-      #${OVERLAY_ID} button { border: 1px solid #333846; background: #242832; color: #fff; cursor: pointer; display: grid; place-items: center; }
-      #${OVERLAY_ID} button:hover { border-color: #51596a; background: #2b303b; }
-      #${OVERLAY_ID} button:disabled { opacity: .35; cursor: not-allowed; }
-      #${OVERLAY_ID} [data-tooltip] { position:relative; }
-      #${OVERLAY_ID} [data-tooltip]:hover::after {
-        content:attr(data-tooltip); position:absolute; left:50%; bottom:calc(100% + 8px); transform:translateX(-50%);
-        z-index:2147483647; width:max-content; max-width:220px; padding:5px 7px; background:#050609; color:#f3f4f6;
-        border:1px solid #333846; font:11px/1.3 Arial, sans-serif; white-space:normal; pointer-events:none;
-      }
-      #${OVERLAY_ID} .yds-head { display:flex; align-items:center; gap:8px; padding:10px; background:#181b20; cursor: move; }
-      #${OVERLAY_ID} .yds-title { min-width:0; flex:1; }
-      #${OVERLAY_ID} .yds-name { font-weight:700; font-size:13px; }
-      #${OVERLAY_ID} .yds-track { color:#9ca3af; font-size:11px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:160px; }
-      #${OVERLAY_ID} .yds-head-actions { display:flex; gap:6px; }
-      #${OVERLAY_ID} .yds-small { width:28px; height:28px; border-radius:999px; padding:0; }
-      #${OVERLAY_ID} .yds-controls { display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; padding:10px; }
-      #${OVERLAY_ID} .yds-icon { height:40px; border-radius:14px; padding:0; }
-      #${OVERLAY_ID} .yds-mini { display:flex; justify-content:center; align-items:center; gap:6px; padding:6px; }
-      #${OVERLAY_ID}.collapsed .yds-head, #${OVERLAY_ID}.collapsed .yds-controls, #${OVERLAY_ID}.collapsed .yds-seek, #${OVERLAY_ID}.collapsed .yds-status { display:none; }
-      #${OVERLAY_ID}:not(.collapsed) .yds-mini { display:none; }
-      #${OVERLAY_ID} .yds-mini .yds-icon { width:42px; height:38px; border-radius:999px; }
-      #${OVERLAY_ID} .green { color:#22c55e; border-color:rgba(34,197,94,.55); }
-      #${OVERLAY_ID} .red { color:#e67e22; }
-      #${OVERLAY_ID} .yds-channel { color:#ff3434; }
-      #${OVERLAY_ID} .blue { color:#60a5fa; }
-      #${OVERLAY_ID} .muted { color:#9ca3af; }
-      #${OVERLAY_ID} .yds-seek { padding: 0 10px 10px; }
-      #${OVERLAY_ID} .yds-times { display:flex; justify-content:space-between; color:#9ca3af; font-size:11px; margin-bottom:5px; }
-      #${OVERLAY_ID} input[type=range] { width:100%; accent-color:#ff3434; }
-      #${OVERLAY_ID} .yds-steps { display:flex; gap:8px; margin-top:6px; }
-      #${OVERLAY_ID} .yds-step { flex:1; height:28px; border-radius:12px; color:#f3f4f6; }
-      #${OVERLAY_ID} .yds-status { color:#9ca3af; font-size:11px; padding:0 10px 10px; min-height:16px; }
-    `;
-  }
-
-  function formatOverlayTime(seconds) {
-    if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-    const total = Math.floor(seconds);
-    const h = Math.floor(total / 3600);
-    const m = Math.floor((total % 3600) / 60);
-    const sec = String(total % 60).padStart(2, "0");
-    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
-  }
-
-  async function getOverlayState() {
-    const result = await chrome.storage.local.get(OVERLAY_STATE_KEY);
-    return Object.assign({ x: null, y: null, collapsed: false }, result[OVERLAY_STATE_KEY] || {});
-  }
-
-  async function saveOverlayState(partial) {
-    const current = await getOverlayState();
-    await chrome.storage.local.set({ [OVERLAY_STATE_KEY]: Object.assign(current, partial) });
-  }
-
-  function overlayButton(cls, title, icon) {
-    return `<button type="button" class="${cls}" data-tooltip="${title}" aria-label="${title}">${icon}</button>`;
-  }
-
-  async function showOverlay() {
-    if (!isWatchPage()) return { ok:false, error:"Open a YouTube video tab first." };
-    await ensureBodyReady();
-    ensureOverlayStyles();
-    let overlay = document.getElementById(OVERLAY_ID);
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.id = OVERLAY_ID;
-      overlay.innerHTML = `
-        <div class="yds-head">
-          <button type="button" class="yds-small yds-play" data-tooltip="Play or pause" aria-label="Play or pause">${ICONS.play}</button>
-          <div class="yds-title"><div class="yds-name">YouDiversify</div><div class="yds-track">Finding video...</div></div>
-          <div class="yds-head-actions">
-            ${overlayButton("yds-small yds-collapse", "Collapse", ICONS.collapse)}
-            ${overlayButton("yds-small yds-close", "Close", ICONS.close)}
-          </div>
-        </div>
-        <div class="yds-controls">
-          ${overlayButton("yds-icon yds-power green", "Turn extension on or off", ICONS.power)}
-          ${overlayButton("yds-icon yds-up", "Upvote", ICONS.up)}
-          ${overlayButton("yds-icon yds-down red", "Downvote and skip", ICONS.down)}
-          ${overlayButton("yds-icon yds-channel", "Block channel", ICONS.channel)}
-          ${overlayButton("yds-icon yds-next", "Skip next", ICONS.next)}
-          ${overlayButton("yds-icon yds-reset", "Reset visited list", ICONS.reset)}
-        </div>
-        <div class="yds-seek">
-          <div class="yds-times"><span class="yds-current">0:00</span><span class="yds-duration">0:00</span></div>
-          <input class="yds-slider" type="range" min="0" max="1000" value="0" data-tooltip="Move through video" aria-label="Move through video">
-          <div class="yds-steps"><button type="button" class="yds-step yds-back" data-tooltip="Back 10 seconds">−10</button><button type="button" class="yds-step yds-forward" data-tooltip="Forward 10 seconds">+10</button></div>
-        </div>
-        <div class="yds-status">Ready</div>
-        <div class="yds-mini">
-          ${overlayButton("yds-icon yds-play", "Play or pause", ICONS.play)}
-          ${overlayButton("yds-icon yds-up", "Upvote", ICONS.up)}
-          ${overlayButton("yds-icon yds-down red", "Downvote and skip", ICONS.down)}
-          ${overlayButton("yds-icon yds-channel", "Block channel", ICONS.channel)}
-          ${overlayButton("yds-icon yds-next", "Skip next", ICONS.next)}
-          ${overlayButton("yds-icon yds-expand", "Expand", ICONS.expand)}
-          ${overlayButton("yds-icon yds-close", "Close", ICONS.close)}
-        </div>`;
-      document.body.appendChild(overlay);
-      bindOverlayEvents(overlay);
-    }
-    overlay.hidden = false;
-    await applyOverlayStoredState(overlay);
-    updateOverlayNow();
-    if (!overlayRefreshTimer) overlayRefreshTimer = setInterval(updateOverlayNow, 500);
-    return { ok:true };
-  }
-
-  async function ensureBodyReady() {
-    while (!document.body) await sleep(25);
-  }
-
-  async function applyOverlayStoredState(overlay) {
-    const state = await getOverlayState();
-    overlay.classList.toggle("collapsed", !!state.collapsed);
-    overlay.querySelector(".yds-seek").hidden = false;
-    if (Number.isFinite(state.x) && Number.isFinite(state.y)) {
-      overlay.style.left = `${state.x}px`; overlay.style.top = `${state.y}px`; overlay.style.right = "auto"; overlay.style.bottom = "auto";
-    }
-  }
-
-  async function toggleOverlay() {
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (overlay && !overlay.hidden) {
-      overlay.hidden = true;
-      if (overlayRefreshTimer) { clearInterval(overlayRefreshTimer); overlayRefreshTimer = null; }
-      return { ok:true, visible:false };
-    }
-    return await showOverlay();
-  }
-
-  function setOverlayStatus(text) {
-    const overlay = document.getElementById(OVERLAY_ID);
-    const status = overlay?.querySelector(".yds-status");
-    if (status) status.textContent = text;
-  }
-
-  function eventHitOverlay(event, overlay) {
-    if (!overlay) return false;
-    if (overlay.hidden) return false;
-    if (event.composedPath?.().includes(overlay)) return true;
-    if (event.target instanceof Node && overlay.contains(event.target)) return true;
-    const rect = overlay.getBoundingClientRect();
-    return event.clientX >= rect.left && event.clientX <= rect.right &&
-      event.clientY >= rect.top && event.clientY <= rect.bottom;
-  }
-
-  function eventHitLegacyAppWindow(event, overlay) {
-    const manager = overlay?.querySelector(".yds-manager");
-    if (eventHitOverlay(event, overlay) || eventHitOverlay(event, manager)) return true;
-    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return false;
-    return [overlay, manager].some(element => {
-      if (!element || element.hidden) return false;
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 &&
-        event.clientX >= rect.left && event.clientX <= rect.right &&
-        event.clientY >= rect.top && event.clientY <= rect.bottom;
-    });
-  }
-
-  async function hideLegacyOverlay(overlay) {
-    overlay.hidden = true;
-    if (overlayRefreshTimer) {
-      clearInterval(overlayRefreshTimer);
-      overlayRefreshTimer = null;
-    }
-    await saveOverlayState({ visible: false });
-  }
-
-  function bindOverlayEvents(overlay) {
-    overlay.addEventListener("click", async (event) => {
-      const target = event.target.closest("button");
-      if (!target) return;
-      event.preventDefault(); event.stopPropagation();
-      if (target.classList.contains("yds-close")) { await hideLegacyOverlay(overlay); return; }
-      if (target.classList.contains("yds-collapse")) { overlay.classList.add("collapsed"); await saveOverlayState({ collapsed:true }); return; }
-      if (target.classList.contains("yds-expand")) { overlay.classList.remove("collapsed"); await saveOverlayState({ collapsed:false }); return; }
-      if (target.classList.contains("yds-power")) { enabled = !enabled; await chrome.storage.local.set({ [ENABLED_KEY]: enabled }); target.classList.toggle("green", enabled); setOverlayStatus(enabled ? "Extension on" : "Extension off"); return; }
-      if (target.classList.contains("yds-play")) { await togglePlayPause(); updateOverlayNow(); return; }
-      if (target.classList.contains("yds-up")) { const r = await clickLikeButton(); setOverlayStatus(r.ok ? (r.liked ? "Upvoted" : "Upvote removed") : r.error); updateOverlayNow(); return; }
-      if (target.classList.contains("yds-down")) { setOverlayStatus("Skipping, please wait..."); const r = await clickDislikeButton(); if (r.ok) await skipToNextPlayableVideo("overlay-dislike", false); else setOverlayStatus(r.error); return; }
-      if (target.classList.contains("yds-channel")) { setOverlayStatus("Blocking channel and skipping..."); const r = await skipChannel(); if (!r.ok) setOverlayStatus(r.error); else setOverlayStatus("Channel blocked"); return; }
-      if (target.classList.contains("yds-next")) { setOverlayStatus("Skipping, please wait..."); await skipToNextPlayableVideo("overlay-skip", false); return; }
-      if (target.classList.contains("yds-reset")) { await resetVisited(); setOverlayStatus("Visited list reset"); return; }
-      if (target.classList.contains("yds-back")) { await seekVideoBySeconds(-10); updateOverlayNow(); return; }
-      if (target.classList.contains("yds-forward")) { await seekVideoBySeconds(10); updateOverlayNow(); return; }
-    }, true);
-
-    overlay.querySelector(".yds-slider")?.addEventListener("input", (event) => {
-      const video = getVideo(); if (!video || !Number.isFinite(video.duration)) return;
-      overlay.querySelector(".yds-current").textContent = formatOverlayTime((Number(event.target.value) / 1000) * video.duration);
-    });
-    overlay.querySelector(".yds-slider")?.addEventListener("change", async (event) => {
-      await seekVideoToPercent(Number(event.target.value) / 10); updateOverlayNow();
-    });
-
-    overlay.querySelector(".yds-head")?.addEventListener("pointerdown", (event) => {
-      if (event.target.closest("button")) return;
-      const rect = overlay.getBoundingClientRect();
-      overlayDrag = { startX: event.clientX, startY: event.clientY, left: rect.left, top: rect.top };
-      overlay.setPointerCapture(event.pointerId);
-    });
-    overlay.addEventListener("pointermove", (event) => {
-      if (!overlayDrag) return;
-      const left = Math.max(8, Math.min(window.innerWidth - overlay.offsetWidth - 8, overlayDrag.left + event.clientX - overlayDrag.startX));
-      const top = Math.max(8, Math.min(window.innerHeight - overlay.offsetHeight - 8, overlayDrag.top + event.clientY - overlayDrag.startY));
-      overlay.style.left = `${left}px`; overlay.style.top = `${top}px`; overlay.style.right = "auto"; overlay.style.bottom = "auto";
-    });
-    overlay.addEventListener("pointerup", async () => {
-      if (!overlayDrag) return;
-      overlayDrag = null;
-      const rect = overlay.getBoundingClientRect();
-      await saveOverlayState({ x: Math.round(rect.left), y: Math.round(rect.top) });
-    });
-
-    const closeOnOutsidePointer = (event) => {
-      if (overlay.hidden || eventHitLegacyAppWindow(event, overlay)) return;
-      hideLegacyOverlay(overlay).catch(() => null);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    window.addEventListener("blur", () => {
-      if (!overlay.hidden) hideLegacyOverlay(overlay).catch(() => null);
-    });
-  }
-
-  function updateOverlayNow() {
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (!overlay || overlay.hidden) return;
-    const video = getVideo();
-    const status = getPlaybackStatus();
-    overlay.querySelector(".yds-track").textContent = getVideoTitle() || "YouTube video";
-    overlay.querySelectorAll(".yds-play").forEach(button => {
-      button.innerHTML = video && !video.paused ? ICONS.pause : ICONS.play;
-    });
-    overlay.querySelector(".yds-power")?.classList.toggle("green", enabled);
-    overlay.querySelectorAll(".yds-up").forEach(b => b.classList.toggle("green", isCurrentVideoLiked()));
-    overlay.querySelector(".yds-current").textContent = formatOverlayTime(status.currentTime);
-    overlay.querySelector(".yds-duration").textContent = formatOverlayTime(status.duration);
-    const slider = overlay.querySelector(".yds-slider");
-    if (slider && status.duration > 0 && document.activeElement !== slider) slider.value = String(Math.round(status.percent * 10));
-  }
-
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const knownTypes = new Set([
-      "YT_YOUDIVERSIFY_TOGGLE_OVERLAY", "YT_YOUDIVERSIFY_SHOW_OVERLAY",
-      "YT_YOUDIVERSIFY_GLOBAL_HIDE_OVERLAY", "YT_YOUDIVERSIFY_ENABLED_CHANGED",
+      "YT_YOUDIVERSIFY_ENABLED_CHANGED",
       "YT_YOUDIVERSIFY_GET_STATUS", "YT_YOUDIVERSIFY_PLAY_PAUSE",
       "YT_YOUDIVERSIFY_UPVOTE", "YT_YOUDIVERSIFY_SEEK_TO_PERCENT",
       "YT_YOUDIVERSIFY_SEEK_BY_SECONDS", "YT_YOUDIVERSIFY_SET_VOLUME",
@@ -1538,21 +1320,6 @@
     ]);
     if (!message?.type || !knownTypes.has(message.type)) return false;
     (async () => {
-      if (message?.type === "YT_YOUDIVERSIFY_TOGGLE_OVERLAY") {
-        return await toggleOverlay();
-      }
-
-      if (message?.type === "YT_YOUDIVERSIFY_SHOW_OVERLAY") {
-        return await showOverlay();
-      }
-
-      if (message?.type === "YT_YOUDIVERSIFY_GLOBAL_HIDE_OVERLAY") {
-        const overlay = document.getElementById(OVERLAY_ID);
-        if (overlay) overlay.hidden = true;
-        if (overlayRefreshTimer) { clearInterval(overlayRefreshTimer); overlayRefreshTimer = null; }
-        return { ok: true, visible: false };
-      }
-
       if (message?.type === "YT_YOUDIVERSIFY_ENABLED_CHANGED") {
         enabled = message.enabled;
         if (enabled) {
@@ -1592,6 +1359,7 @@
           paused: !!getVideo()?.paused,
           playing: !!getVideo() && !getVideo().paused,
           title: getVideoTitle(),
+          channel: getChannelInfo(),
           volume: Number.isFinite(getVideo()?.volume) ? getVideo().volume : 1,
           muted: !!getVideo()?.muted,
           hasLikeButton: !!findLikeButton(),
@@ -1624,11 +1392,11 @@
         const result = await clickDislikeButton();
         if (!result.ok) return result;
         await sleep(100);
-        return await skipToNextPlayableVideo("popup-dislike", false);
+        return await skipToNextPlayableVideo("overlay-dislike", false);
       }
 
       if (message?.type === "YT_YOUDIVERSIFY_SKIP_NEXT") {
-        return await skipToNextPlayableVideo("popup-skip", false);
+        return await skipToNextPlayableVideo("overlay-skip", false);
       }
 
       if (message?.type === "YT_YOUDIVERSIFY_SKIP_NEXT_UNTRACKED") {

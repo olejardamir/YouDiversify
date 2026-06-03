@@ -14,14 +14,14 @@ All data is stored **locally** in your browser using Chrome's `storage.local` AP
 - playlist mode preferences (shuffle, repeat, filters)
 - floating player position, collapsed state, and theme preference
 - manager window position and size
-- short-lived navigation markers for playback control
+- short-lived navigation markers for forced play and untracked skip
 
 ### How data is used
 
 This data is used solely to:
 
 - remember which videos you have seen and how you voted
-- skip unwanted content (downvoted videos, blocked channels)
+- skip unwanted content (visited videos, downvoted videos, the current channel, blocked channels, and YouTube Mixes)
 - restore the player position and theme between sessions
 
 ### What data is NOT collected
