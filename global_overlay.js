@@ -1042,7 +1042,6 @@
         ${button("yds-icon yds-channel", "Block channel", ICONS.channel)}
         ${button("yds-icon yds-next", "Skip next", ICONS.next)}
         ${button("yds-icon yds-next-untracked green", "Skip next without tracking", "?")}
-        ${button("yds-icon yds-volume-toggle", "Show or hide volume slider", ICONS.volume)}
         ${button("yds-icon yds-expand", "Expand", ICONS.expand)}
         ${button("yds-icon yds-close", "Close", ICONS.close)}
         <div class="yds-mini-seek"><input class="yds-slider yds-mini-slider" type="range" min="0" max="1000" value="0" data-tooltip="Move through video" aria-label="Move through video"></div>
