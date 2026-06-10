@@ -778,6 +778,28 @@
     return !!currentName && !!candidateName && currentName === candidateName;
   }
 
+  function normalizeTitle(text) {
+    return (text || "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function getTitleWords(title) {
+    return normalizeTitle(title).split(" ").filter(w => w.length > 2);
+  }
+
+  function titlesAreSimilar(titleA, titleB, threshold = 0.6) {
+    if (!titleA || !titleB) return false;
+    const wordsA = new Set(getTitleWords(titleA));
+    const wordsB = new Set(getTitleWords(titleB));
+    if (wordsA.size === 0 || wordsB.size === 0) return false;
+    const intersection = new Set([...wordsA].filter(w => wordsB.has(w)));
+    const union = new Set([...wordsA, ...wordsB]);
+    return intersection.size / union.size >= threshold;
+  }
+
   function extractVideoData(item) {
     const titleLink = item.querySelector("a.ytLockupMetadataViewModelTitle[href*='/watch?v='], a#video-title[href*='/watch?v=']");
     const thumbnailLink = item.querySelector("a.ytLockupViewModelContentImage[href*='/watch?v='], a#thumbnail[href*='/watch?v=']");
@@ -995,6 +1017,7 @@
     const managedById = new Map(entries.map(item => [item.videoId, item]));
     const currentId = getVideoIdFromUrl();
     const currentChannel = getChannelInfo();
+    const currentTitle = getVideoTitle();
     const blocked = await getBlockedChannels();
     const blockedChannelIds = new Set(blocked.map(c => c.channelId).filter(Boolean));
     const blockedChannelNames = new Set(blocked.map(c => normalizeChannelText(c.channelName)).filter(Boolean));
@@ -1006,6 +1029,7 @@
       const existingEntry = managedById.get(data.videoId);
       if (existingEntry) continue;
       if (isMixVideo(data)) continue;
+      if (currentTitle && titlesAreSimilar(currentTitle, data.title)) continue;
       const entry = managedById.get(data.videoId);
       const entryChannelId = data.channelId || entry?.channelId || "";
       const entryChannelName = normalizeChannelText(data.channelName || entry?.channelName || "");
