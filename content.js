@@ -582,12 +582,18 @@
     return getLikeButtonState()?.liked === true;
   }
 
-  function injectInlineControls() {
+  function injectInlineControls(retry = 0) {
     if (document.getElementById("yt-yd-inline-controls")) return;
     const segmented = document.querySelector("segmented-like-dislike-button-view-model");
-    if (!segmented) return;
+    if (!segmented) {
+      if (retry < 20) setTimeout(() => injectInlineControls(retry + 1), 200);
+      return;
+    }
     const wrapper = segmented.querySelector(".ytSegmentedLikeDislikeButtonViewModelSegmentedButtonsWrapper");
-    if (!wrapper) return;
+    if (!wrapper) {
+      if (retry < 20) setTimeout(() => injectInlineControls(retry + 1), 200);
+      return;
+    }
 
     const container = document.createElement("div");
     container.id = "yt-yd-inline-controls";
