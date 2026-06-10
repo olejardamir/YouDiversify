@@ -661,13 +661,27 @@
     return { button, ready: false, downvoted: false };
   }
 
-  async function waitForDislikeButtonState(token, timeoutMs = 6000) {
+  async function waitForDislikeButtonState(token, timeoutMs = 8000) {
     const started = Date.now();
+    let lastDownvoted = null;
+    let stableCount = 0;
+    const requiredStableChecks = 3;
+
     while (enabled && isWatchPage() && token === startupPauseToken && Date.now() - started < timeoutMs) {
       pauseVideoIfPossible();
 
       const state = getDislikeButtonState();
-      if (state?.ready) return state;
+      if (state?.ready) {
+        if (state.downvoted === lastDownvoted) {
+          stableCount++;
+          if (stableCount >= requiredStableChecks) {
+            return state;
+          }
+        } else {
+          stableCount = 1;
+          lastDownvoted = state.downvoted;
+        }
+      }
 
       await sleep(20);
     }
