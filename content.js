@@ -582,6 +582,43 @@
     return getLikeButtonState()?.liked === true;
   }
 
+  function injectInlineControls() {
+    if (document.getElementById("yt-yd-inline-controls")) return;
+    const segmented = document.querySelector("segmented-like-dislike-button-view-model");
+    if (!segmented) return;
+    const wrapper = segmented.querySelector(".ytSegmentedLikeDislikeButtonViewModelSegmentedButtonsWrapper");
+    if (!wrapper) return;
+
+    const container = document.createElement("div");
+    container.id = "yt-yd-inline-controls";
+    container.style.cssText = "display:flex;gap:4px;margin-left:8px;align-items:center;";
+
+    const makeBtn = (title, icon, cls, handler) => {
+      const btn = document.createElement("button");
+      btn.className = `yt-spec-button-shape-next yt-spec-button-shape-next--tonal yt-spec-button-shape-next--mono yt-spec-button-shape-next--size-m yt-spec-button-shape-next--icon-button ${cls}`;
+      btn.title = title;
+      btn.setAttribute("aria-label", title);
+      btn.setAttribute("aria-pressed", "false");
+      btn.setAttribute("aria-disabled", "false");
+      btn.innerHTML = `<div class="yt-spec-button-shape-next__icon"><span class="yt-icon-wrapper" style="width:24px;height:24px;"><span class="yt-icon-shape" style="width:24px;height:24px;">${icon}</span></span></div><yt-touch-feedback-shape class="yt-spec-touch-feedback-shape yt-spec-touch-feedback-shape--touch-response" aria-hidden="true"><div class="yt-spec-touch-feedback-shape__stroke"></div><div class="yt-spec-touch-feedback-shape__fill"></div></yt-touch-feedback-shape>`;
+      btn.addEventListener("click", handler);
+      return btn;
+    };
+
+    const ICONS = {
+      next: `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true"><path d="M6 6h12v12H6zM4 4h16v16H4z"/></svg>`,
+      untracked: `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true"><text x="12" y="17" font-size="14" text-anchor="middle" fill="currentColor">?</text></svg>`,
+      channel: `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
+    };
+
+    const btnNext = makeBtn("Skip next", ICONS.next, "yd-inline-next", () => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_SKIP_NEXT" }));
+    const btnUntracked = makeBtn("Skip next without tracking", ICONS.untracked, "yd-inline-untracked", () => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_SKIP_NEXT_UNTRACKED" }));
+    const btnChannel = makeBtn("Block channel and skip", ICONS.channel, "yd-inline-channel", () => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_SKIP_CHANNEL" }));
+
+    container.append(btnNext, btnUntracked, btnChannel);
+    wrapper.appendChild(container);
+  }
+
   function getLikeButtonState() {
     const button = findLikeButton();
     if (!button) return null;
@@ -1312,6 +1349,7 @@
     attachVideoEndListener();
     pauseUntilDislikeButtonThenCheck();
     requestVisibleGlobalOverlayRestore();
+    injectInlineControls();
   }
 
   async function requestVisibleGlobalOverlayRestore() {
@@ -1342,6 +1380,12 @@
         onPageReadyOrChanged();
       }
     }, 250);
+
+    new MutationObserver(() => {
+      if (!document.getElementById("yt-yd-inline-controls")) {
+        injectInlineControls();
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
 
