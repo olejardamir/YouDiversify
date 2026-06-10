@@ -704,7 +704,7 @@
     return { button, ready: false, downvoted: false };
   }
 
-  async function waitForDislikeButtonState(token, timeoutMs = 8000) {
+  async function waitForDislikeButtonState(token, timeoutMs = 10000) {
     const started = Date.now();
     let lastDownvoted = null;
     let stableCount = 0;
@@ -727,6 +727,10 @@
       }
 
       await sleep(20);
+    }
+
+    if (lastDownvoted !== null) {
+      return { ready: true, downvoted: lastDownvoted };
     }
     return null;
   }
