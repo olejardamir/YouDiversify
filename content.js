@@ -623,6 +623,12 @@
 
     container.append(btnNext, btnUntracked, btnChannel);
     wrapper.appendChild(container);
+
+    new MutationObserver(() => {
+      if (!document.querySelector("segmented-like-dislike-button-view-model")) {
+        container.remove();
+      }
+    }).observe(wrapper, { childList: true, subtree: true });
   }
 
   function getLikeButtonState() {
