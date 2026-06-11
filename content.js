@@ -609,13 +609,15 @@
       btn.textContent = icon;
       btn.style.fontSize = "16px";
       btn.style.lineHeight = "1";
-      btn.style.paddingTop = "2px";
-      btn.style.paddingBottom = "2px";
       btn.style.minWidth = "36px";
       btn.style.height = "36px";
       btn.style.display = "flex";
       btn.style.alignItems = "center";
       btn.style.justifyContent = "center";
+      if (cls.includes("yd-inline-next")) {
+        btn.style.fontSize = "20px";
+        btn.style.marginTop = "3px";
+      }
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         e.preventDefault();
