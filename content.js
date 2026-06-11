@@ -606,7 +606,11 @@
       btn.setAttribute("aria-label", title);
       btn.setAttribute("aria-pressed", "false");
       btn.setAttribute("aria-disabled", "false");
-      btn.textContent = icon;
+      const span = document.createElement("span");
+      span.textContent = icon;
+      span.style.fontSize = cls.includes("yd-inline-next") ? "20px" : "16px";
+      span.style.lineHeight = "1";
+      btn.appendChild(span);
       btn.style.fontSize = "16px";
       btn.style.lineHeight = "1";
       btn.style.minWidth = "36px";
@@ -614,10 +618,6 @@
       btn.style.display = "flex";
       btn.style.alignItems = "center";
       btn.style.justifyContent = "center";
-      if (cls.includes("yd-inline-next")) {
-        btn.style.fontSize = "20px";
-        btn.style.marginTop = "3px";
-      }
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         e.preventDefault();
