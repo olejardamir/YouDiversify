@@ -1400,25 +1400,11 @@
   function watchDislikeClicks() {
     document.addEventListener("click", async (event) => {
       if (!enabled) return;
-      const path = event.composedPath?.() || [];
-      const button = path.find(el => {
-        if (!(el instanceof Element)) return false;
-        const tag = (el.tagName || "").toLowerCase();
-        const label = (el.getAttribute?.("aria-label") || "").toLowerCase();
-        if (tag === "button" && label.includes("dislike")) return true;
-        if (tag === "dislike-button-view-model") return true;
-        if (tag === "yt-button-view-model" && label.includes("dislike")) return true;
-        if (tag === "yt-touch-feedback-shape" && label.includes("dislike")) return true;
-        if ((el.getAttribute?.("role") || "") === "button" && label.includes("dislike")) return true;
-        return false;
-      });
-      if (!button) {
-        const btn = findDislikeButton();
-        if (!btn) return;
-        const rect = btn.getBoundingClientRect();
-        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
-      }
-      const wasDownvoted = getDislikeButtonState(button || findDislikeButton())?.downvoted === true;
+      const button = event.target.closest?.("dislike-button-view-model button, button[aria-label*='Dislike' i], yt-button-view-model button[aria-label*='Dislike' i], [role='button'][aria-label*='Dislike' i]");
+      if (!button) return;
+      const state = getDislikeButtonState(button);
+      if (!state?.ready) return;
+      const wasDownvoted = state.downvoted === true;
       await saveCurrentVideoMetadata({ downvoted: !wasDownvoted, upvoted: !wasDownvoted ? false : undefined });
       if (!wasDownvoted) {
         await skipToNextPlayableVideo("dislike-click");
@@ -1429,24 +1415,10 @@
   function watchLikeClicks() {
     document.addEventListener("click", async (event) => {
       if (!enabled) return;
-      const path = event.composedPath?.() || [];
-      const button = path.find(el => {
-        if (!(el instanceof Element)) return false;
-        const tag = (el.tagName || "").toLowerCase();
-        const label = (el.getAttribute?.("aria-label") || "").toLowerCase();
-        if (tag === "button" && label.includes("like this video")) return true;
-        if (tag === "like-button-view-model") return true;
-        if (tag === "yt-button-view-model" && label.includes("like this video")) return true;
-        if (tag === "yt-touch-feedback-shape" && label.includes("like this video")) return true;
-        if ((el.getAttribute?.("role") || "") === "button" && label.includes("like this video")) return true;
-        return false;
-      });
-      if (!button) {
-        const btn = findLikeButton();
-        if (!btn) return;
-        const rect = btn.getBoundingClientRect();
-        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
-      }
+      const button = event.target.closest?.("like-button-view-model button, button[aria-label*='like this video' i], yt-button-view-model button[aria-label*='like this video' i], [role='button'][aria-label*='like this video' i]");
+      if (!button) return;
+      const state = getLikeButtonState(button);
+      if (!state?.ready) return;
       await sleep(80);
       const liked = isCurrentVideoLiked();
       await saveCurrentVideoMetadata({ upvoted: liked, downvoted: liked ? false : undefined });
