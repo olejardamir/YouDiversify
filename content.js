@@ -607,8 +607,15 @@
       btn.setAttribute("aria-pressed", "false");
       btn.setAttribute("aria-disabled", "false");
       btn.textContent = icon;
-      btn.style.fontSize = "18px";
+      btn.style.fontSize = "16px";
       btn.style.lineHeight = "1";
+      btn.style.paddingTop = "2px";
+      btn.style.paddingBottom = "2px";
+      btn.style.minWidth = "36px";
+      btn.style.height = "36px";
+      btn.style.display = "flex";
+      btn.style.alignItems = "center";
+      btn.style.justifyContent = "center";
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         e.preventDefault();
