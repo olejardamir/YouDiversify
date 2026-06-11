@@ -616,9 +616,9 @@
     };
 
     const ICONS = {
-      next: '<svg viewBox="0 0 24 24"><path d="M5 4v16l10-8L5 4Zm11 0h3v16h-3V4Z"/></svg>',
-      untracked: '<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>',
-      channel: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/></svg>',
+      next: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4v16l10-8L5 4zm11 0h3v16h-3V4z"/></svg>',
+      untracked: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/><path d="M12 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>',
+      channel: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c4.42 0 8 3.58 8 8 0 4.42-3.58 8-8 8s-8-3.58-8-8 .63-3.55 1.69-4.9L7.1 5.69C5.75 6.75 4 8.45 4 12s1.75 5.25 4.31 6.31l9.9-9.9C20.37 7.55 20 5.85 20 4c0-4.42-3.58-8-8-8z"/></svg>',
     };
 
     const sendCommand = (type) => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_RELAY", command: { type } });
