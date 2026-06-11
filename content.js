@@ -1134,7 +1134,7 @@
       const existingEntry = managedById.get(data.videoId);
       if (existingEntry) {
         if (existingEntry.downvoted) continue;
-        continue;
+        if (!existingEntry.upvoted) continue;
       }
       if (isMixVideo(data)) continue;
       if (currentTitle && titlesAreSimilar(currentTitle, data.title)) continue;
@@ -1349,23 +1349,22 @@
     controlDetectionActive = true;
     await notifyPlaybackWaiting();
 
+    const videoId = getVideoIdFromUrl();
+    if (videoId) {
+      const storedEntry = await getCurrentVideoEntry(videoId);
+      if (storedEntry?.downvoted && !await consumeForcePlayOnce()) {
+        await skipToNextPlayableVideo("already-downvoted");
+        controlDetectionActive = false;
+        return;
+      }
+    }
+
     const started = Date.now();
     const maxWaitMs = 10000;
 
     try {
       while (enabled && isWatchPage() && token === startupPauseToken) {
         pauseVideoIfPossible();
-
-        if (Date.now() - started > maxWaitMs) {
-          const storedEntry = await getCurrentVideoEntry();
-          if (storedEntry?.downvoted && !await consumeForcePlayOnce()) {
-            await skipToNextPlayableVideo("already-downvoted");
-            return;
-          }
-          await saveCurrentVideoMetadata({});
-          await playVideoIfStillCurrent(token);
-          return;
-        }
 
         const dislikeState = await waitForDislikeButtonState(token);
         if (dislikeState?.ready) {
@@ -1380,7 +1379,18 @@
           return;
         }
 
-        await sleep(10);
+        if (Date.now() - started > maxWaitMs) {
+          const storedEntry = await getCurrentVideoEntry();
+          if (storedEntry?.downvoted && !await consumeForcePlayOnce()) {
+            await skipToNextPlayableVideo("already-downvoted");
+            return;
+          }
+          await saveCurrentVideoMetadata({});
+          await playVideoIfStillCurrent(token);
+          return;
+        }
+
+        await sleep(20);
       }
     } finally {
       controlDetectionActive = false;
@@ -1390,9 +1400,25 @@
   function watchDislikeClicks() {
     document.addEventListener("click", async (event) => {
       if (!enabled) return;
-      const button = event.target.closest?.("dislike-button-view-model button, button[aria-label*='Dislike' i], yt-button-view-model[aria-label*='Dislike' i], [role='button'][aria-label*='Dislike' i]");
-      if (!button) return;
-      const wasDownvoted = getDislikeButtonState(button)?.downvoted === true;
+      const path = event.composedPath?.() || [];
+      const button = path.find(el => {
+        if (!(el instanceof Element)) return false;
+        const tag = (el.tagName || "").toLowerCase();
+        const label = (el.getAttribute?.("aria-label") || "").toLowerCase();
+        if (tag === "button" && label.includes("dislike")) return true;
+        if (tag === "dislike-button-view-model") return true;
+        if (tag === "yt-button-view-model" && label.includes("dislike")) return true;
+        if (tag === "yt-touch-feedback-shape" && label.includes("dislike")) return true;
+        if ((el.getAttribute?.("role") || "") === "button" && label.includes("dislike")) return true;
+        return false;
+      });
+      if (!button) {
+        const btn = findDislikeButton();
+        if (!btn) return;
+        const rect = btn.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
+      }
+      const wasDownvoted = getDislikeButtonState(button || findDislikeButton())?.downvoted === true;
       await saveCurrentVideoMetadata({ downvoted: !wasDownvoted, upvoted: !wasDownvoted ? false : undefined });
       if (!wasDownvoted) {
         await skipToNextPlayableVideo("dislike-click");
@@ -1403,8 +1429,24 @@
   function watchLikeClicks() {
     document.addEventListener("click", async (event) => {
       if (!enabled) return;
-      const button = event.target.closest?.("like-button-view-model button, button[aria-label*='like this video' i], yt-button-view-model[aria-label*='like this video' i], [role='button'][aria-label*='like this video' i]");
-      if (!button) return;
+      const path = event.composedPath?.() || [];
+      const button = path.find(el => {
+        if (!(el instanceof Element)) return false;
+        const tag = (el.tagName || "").toLowerCase();
+        const label = (el.getAttribute?.("aria-label") || "").toLowerCase();
+        if (tag === "button" && label.includes("like this video")) return true;
+        if (tag === "like-button-view-model") return true;
+        if (tag === "yt-button-view-model" && label.includes("like this video")) return true;
+        if (tag === "yt-touch-feedback-shape" && label.includes("like this video")) return true;
+        if ((el.getAttribute?.("role") || "") === "button" && label.includes("like this video")) return true;
+        return false;
+      });
+      if (!button) {
+        const btn = findLikeButton();
+        if (!btn) return;
+        const rect = btn.getBoundingClientRect();
+        if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
+      }
       await sleep(80);
       const liked = isCurrentVideoLiked();
       await saveCurrentVideoMetadata({ upvoted: liked, downvoted: liked ? false : undefined });
