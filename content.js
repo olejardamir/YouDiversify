@@ -606,7 +606,9 @@
       btn.setAttribute("aria-label", title);
       btn.setAttribute("aria-pressed", "false");
       btn.setAttribute("aria-disabled", "false");
-      btn.innerHTML = `<div class="yt-spec-button-shape-next__icon"><span class="yt-icon-wrapper" style="width:24px;height:24px;"><span class="yt-icon-shape" style="width:24px;height:24px;">${icon}</span></span></div><yt-touch-feedback-shape class="yt-spec-touch-feedback-shape yt-spec-touch-feedback-shape--touch-response" aria-hidden="true"><div class="yt-spec-touch-feedback-shape__stroke"></div><div class="yt-spec-touch-feedback-shape__fill"></div></yt-touch-feedback-shape>`;
+      btn.textContent = icon;
+      btn.style.fontSize = "18px";
+      btn.style.lineHeight = "1";
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -616,9 +618,9 @@
     };
 
     const ICONS = {
-      next: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4v16l10-8L5 4zm11 0h3v16h-3V4z"/></svg>',
-      untracked: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/><path d="M12 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>',
-      channel: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c4.42 0 8 3.58 8 8 0 4.42-3.58 8-8 8s-8-3.58-8-8 .63-3.55 1.69-4.9L7.1 5.69C5.75 6.75 4 8.45 4 12s1.75 5.25 4.31 6.31l9.9-9.9C20.37 7.55 20 5.85 20 4c0-4.42-3.58-8-8-8z"/></svg>',
+      next: '⏭',
+      untracked: '❓',
+      channel: '🚫',
     };
 
     const sendCommand = (type) => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_RELAY", command: { type } });
