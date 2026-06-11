@@ -1472,7 +1472,7 @@
     if (!fromSkip) return;
     const storedEntry = await getCurrentVideoEntry(videoId);
     if (!storedEntry) return;
-    if (storedEntry.upvoted) return;
+    if (!storedEntry.downvoted) return;
     const forcePlayOnce = await consumeForcePlayOnce();
     if (forcePlayOnce) return;
     await skipToNextPlayableVideo("already-downvoted");
