@@ -11,9 +11,12 @@
   const PLAYLIST_SHUFFLE_KEY = "yt_youdiversify_playlist_shuffle";
   const PLAYLIST_REPEAT_KEY = "yt_youdiversify_playlist_repeat";
   const FORCE_PLAY_ONCE_MAX_AGE_MS = 2 * 60 * 1000;
+  const NAV_FROM_SKIP_KEY = "yt_youdiversify_nav_from_skip";
+  const NAV_FROM_SKIP_MAX_AGE_MS = 5000;
 
   let enabled = true;
   let skipInProgress = false;
+  let navigationFromSkip = false;
   let attachedVideo = null;
   let controlsObserver = null;
   let lastUrl = location.href;
@@ -558,20 +561,40 @@
       document.querySelector("#segmented-dislike-button button") ||
       document.querySelector("button[aria-label*='Dislike' i][aria-pressed]") ||
       document.querySelector("button[title*='Dislike' i][aria-pressed]") ||
+      document.querySelector("yt-button-view-model button[aria-label*='Dislike' i]") ||
       Array.from(document.querySelectorAll("button[aria-label]")).find(button => {
         const label = button.getAttribute("aria-label") || "";
         return /dislike this video/i.test(label);
-      }) || null;
+      }) ||
+      Array.from(document.querySelectorAll("[role='button']")).find(el => {
+        const label = el.getAttribute("aria-label") || "";
+        return /dislike this video/i.test(label);
+      }) ||
+      Array.from(document.querySelectorAll("yt-touch-feedback-shape")).find(el => {
+        const label = el.closest("[aria-label]")?.getAttribute("aria-label") || el.getAttribute("aria-label") || "";
+        return /dislike this video/i.test(label);
+      }) ||
+      null;
   }
 
   function findLikeButton() {
     return document.querySelector("like-button-view-model button[aria-label*='like this video' i]") ||
       document.querySelector("segmented-like-dislike-button-view-model like-button-view-model button") ||
       document.querySelector("#segmented-like-button button") ||
+      document.querySelector("yt-button-view-model button[aria-label*='like this video' i]") ||
       Array.from(document.querySelectorAll("button[aria-label]")).find(button => {
         const label = button.getAttribute("aria-label") || "";
         return /^like this video/i.test(label);
-      }) || null;
+      }) ||
+      Array.from(document.querySelectorAll("[role='button']")).find(el => {
+        const label = el.getAttribute("aria-label") || "";
+        return /^like this video/i.test(label);
+      }) ||
+      Array.from(document.querySelectorAll("yt-touch-feedback-shape")).find(el => {
+        const label = el.closest("[aria-label]")?.getAttribute("aria-label") || el.getAttribute("aria-label") || "";
+        return /^like this video/i.test(label);
+      }) ||
+      null;
   }
 
   function isCurrentVideoDownvoted() {
@@ -613,6 +636,9 @@
       if (cls.includes("yd-inline-next")) {
         span.style.position = "relative";
         span.style.top = "2px";
+      }
+      if (cls.includes("yd-inline-untracked")) {
+        span.style.color = "#006400";
       }
       btn.appendChild(span);
       btn.style.fontSize = "16px";
@@ -661,7 +687,9 @@
       button.closest("like-button-view-model"),
       button.closest("#segmented-like-button"),
       button.closest("ytd-toggle-button-renderer"),
-      button.closest("yt-button-view-model")
+      button.closest("yt-button-view-model"),
+      button.closest("segmented-like-dislike-button-view-model"),
+      button.closest("[role='group']")
     ].filter(Boolean);
 
     const stateElement = stateCandidates.find(element => {
@@ -699,7 +727,9 @@
       button.closest("dislike-button-view-model"),
       button.closest("#segmented-dislike-button"),
       button.closest("ytd-toggle-button-renderer"),
-      button.closest("yt-button-view-model")
+      button.closest("yt-button-view-model"),
+      button.closest("segmented-like-dislike-button-view-model"),
+      button.closest("[role='group']")
     ].filter(Boolean);
 
 
@@ -1101,12 +1131,14 @@
       if (!data) continue;
       if (data.videoId === currentId) continue;
       const existingEntry = managedById.get(data.videoId);
-      if (existingEntry) continue;
+      if (existingEntry) {
+        if (existingEntry.downvoted) continue;
+        continue;
+      }
       if (isMixVideo(data)) continue;
       if (currentTitle && titlesAreSimilar(currentTitle, data.title)) continue;
-      const entry = managedById.get(data.videoId);
-      const entryChannelId = data.channelId || entry?.channelId || "";
-      const entryChannelName = normalizeChannelText(data.channelName || entry?.channelName || "");
+      const entryChannelId = data.channelId || "";
+      const entryChannelName = normalizeChannelText(data.channelName || "");
       if (entryChannelId && blockedChannelIds.has(entryChannelId)) continue;
       if (entryChannelName && blockedChannelNames.has(entryChannelName)) continue;
       if (isSameChannel(currentChannel, data)) continue;
@@ -1185,6 +1217,8 @@
         return { ok: false, error: "There is nothing new to play." };
       }
 
+      navigationFromSkip = true;
+      await chrome.storage.local.set({ [NAV_FROM_SKIP_KEY]: { createdAt: Date.now() } });
       await navigateToVideo(next);
       return { ok: true, videoId: next.videoId, title: next.title };
     } finally {
@@ -1224,6 +1258,8 @@
         }
       });
       await removeVisitedVideos([currentVideoId, next.videoId]);
+      navigationFromSkip = true;
+      await chrome.storage.local.set({ [NAV_FROM_SKIP_KEY]: { createdAt: Date.now() } });
       await navigateToVideo(next);
       return { ok: true, videoId: next.videoId, title: next.title, untracked: true };
     } finally {
@@ -1320,6 +1356,11 @@
         pauseVideoIfPossible();
 
         if (Date.now() - started > maxWaitMs) {
+          const storedEntry = await getCurrentVideoEntry();
+          if (storedEntry?.downvoted && !await consumeForcePlayOnce()) {
+            await skipToNextPlayableVideo("already-downvoted");
+            return;
+          }
           await saveCurrentVideoMetadata({});
           await playVideoIfStillCurrent(token);
           return;
@@ -1348,7 +1389,7 @@
   function watchDislikeClicks() {
     document.addEventListener("click", async (event) => {
       if (!enabled) return;
-      const button = event.target.closest?.("dislike-button-view-model button, button[aria-label*='Dislike']");
+      const button = event.target.closest?.("dislike-button-view-model button, button[aria-label*='Dislike' i], yt-button-view-model[aria-label*='Dislike' i], [role='button'][aria-label*='Dislike' i]");
       if (!button) return;
       const wasDownvoted = getDislikeButtonState(button)?.downvoted === true;
       await saveCurrentVideoMetadata({ downvoted: !wasDownvoted, upvoted: !wasDownvoted ? false : undefined });
@@ -1361,12 +1402,37 @@
   function watchLikeClicks() {
     document.addEventListener("click", async (event) => {
       if (!enabled) return;
-      const button = event.target.closest?.("like-button-view-model button, button[aria-label*='like this video' i]");
+      const button = event.target.closest?.("like-button-view-model button, button[aria-label*='like this video' i], yt-button-view-model[aria-label*='like this video' i], [role='button'][aria-label*='like this video' i]");
       if (!button) return;
       await sleep(80);
       const liked = isCurrentVideoLiked();
       await saveCurrentVideoMetadata({ upvoted: liked, downvoted: liked ? false : undefined });
     }, true);
+  }
+
+  async function checkAndSkipIfVisitedFromSkip(videoId) {
+    if (!videoId) return;
+    let fromSkip = navigationFromSkip;
+    navigationFromSkip = false;
+    if (!fromSkip) {
+      try {
+        const result = await chrome.storage.local.get(NAV_FROM_SKIP_KEY);
+        const marker = result[NAV_FROM_SKIP_KEY];
+        if (marker && Date.now() - marker.createdAt <= NAV_FROM_SKIP_MAX_AGE_MS) {
+          fromSkip = true;
+        }
+        await chrome.storage.local.remove(NAV_FROM_SKIP_KEY);
+      } catch {
+        // best effort
+      }
+    }
+    if (!fromSkip) return;
+    const storedEntry = await getCurrentVideoEntry(videoId);
+    if (!storedEntry) return;
+    if (storedEntry.upvoted) return;
+    const forcePlayOnce = await consumeForcePlayOnce();
+    if (forcePlayOnce) return;
+    await skipToNextPlayableVideo("already-downvoted");
   }
 
   async function onPageReadyOrChanged() {
@@ -1383,6 +1449,7 @@
       trackingSuppressedVideoId = videoId;
       await removeVisitedVideos([videoId]);
     }
+    await checkAndSkipIfVisitedFromSkip(videoId);
     attachVideoEndListener();
     pauseUntilDislikeButtonThenCheck();
     requestVisibleGlobalOverlayRestore();

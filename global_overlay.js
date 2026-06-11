@@ -12,6 +12,7 @@
   const PLAYLIST_SHUFFLE_KEY = "yt_youdiversify_playlist_shuffle";
   const PLAYLIST_REPEAT_KEY = "yt_youdiversify_playlist_repeat";
   const FORCE_PLAY_ONCE_KEY = "yt_youdiversify_force_play_once";
+  const NAV_FROM_SKIP_KEY = "yt_youdiversify_nav_from_skip";
   const THEME_KEY = "yt_youdiversify_theme";
   const OVERLAY_ID = "yt-youdiversify-floating-player";
   const STYLE_ID = "yt-youdiversify-global-overlay-style";
@@ -711,6 +712,9 @@
     await safeStorageSet({
       [FORCE_PLAY_ONCE_KEY]: { videoId, url: safeUrl, createdAt: Date.now() }
     });
+    if (hasExtensionContext()) {
+      try { await chrome.storage.local.remove(NAV_FROM_SKIP_KEY); } catch {}
+    }
   }
 
   async function getPlaylistMode() {
