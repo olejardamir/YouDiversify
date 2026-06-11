@@ -54,6 +54,53 @@ function isYoutubeWatchUrl(url) {
   }
 }
 
+function isYoutubeUrl(url) {
+  try {
+    const parsed = new URL(url || "");
+    return parsed.protocol === "https:" && parsed.hostname === "www.youtube.com";
+  } catch {
+    return false;
+  }
+}
+
+async function updateActionIcon(tabId) {
+  const enabled = await getEnabled();
+  if (!enabled) {
+    await chrome.action.setIcon({ path: ICON_OFF });
+    await chrome.action.setTitle({ title: "YouDiversify: OFF" });
+    return;
+  }
+
+  let tab;
+  if (tabId) {
+    tab = await chrome.tabs.get(tabId).catch(() => null);
+  } else {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    tab = tabs[0];
+  }
+
+  if (!tab || !tab.id) {
+    await chrome.action.setIcon({ path: ICON_OFF });
+    await chrome.action.setTitle({ title: "YouDiversify: ON (no tab)" });
+    return;
+  }
+
+  const url = tab.url || "";
+  if (!isYoutubeUrl(url)) {
+    await chrome.action.setIcon({ path: ICON_OFF });
+    await chrome.action.setTitle({ title: "YouDiversify: ON (not YouTube)" });
+    return;
+  }
+
+  if (isYoutubeWatchUrl(url)) {
+    await chrome.action.setIcon({ path: ICON_ON });
+    await chrome.action.setTitle({ title: "YouDiversify: ON (watch page)" });
+  } else {
+    await chrome.action.setIcon({ path: ICON_WARN });
+    await chrome.action.setTitle({ title: "YouDiversify: ON (YouTube)" });
+  }
+}
+
 function isYoutubeWatchTab(tab) {
   return !!tab?.id && isYoutubeWatchUrl(tab.url);
 }
@@ -245,35 +292,47 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   restoreOverlayAfterNavigation(tabId, tab.url).catch(() => null);
 });
 
-chrome.tabs.onActivated.addListener(() => {
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
   hideOverlayEverywhere().catch(() => null);
+  await updateActionIcon(activeInfo.tabId);
 });
 
-chrome.windows.onFocusChanged.addListener((windowId) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  restoreOverlayAfterNavigation(tabId, tab.url).catch(() => null);
+  if (changeInfo.url) {
+    updateActionIcon(tabId).catch(() => null);
+  }
+});
+
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
     hideOverlayEverywhere().catch(() => null);
+  } else {
+    const tabs = await chrome.tabs.query({ active: true, windowId, currentWindow: true });
+    if (tabs[0]?.id) await updateActionIcon(tabs[0].id);
   }
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.action.setBadgeText({ text: "" });
-  await setBadge(await getEnabled());
+  await updateActionIcon();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await chrome.action.setBadgeText({ text: "" });
-  await setBadge(await getEnabled());
+  await updateActionIcon();
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes[ENABLED_KEY]) return;
-  setBadge(changes[ENABLED_KEY].newValue !== false);
+  updateActionIcon().catch(() => null);
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message?.type === "YT_YOUDIVERSIFY_SET_BADGE") {
-      await setBadge(message.enabled !== false);
+      await updateActionIcon();
       return { ok: true };
     }
 
