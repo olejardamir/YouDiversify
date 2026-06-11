@@ -638,7 +638,8 @@
         span.style.top = "2px";
       }
       if (cls.includes("yd-inline-untracked")) {
-        span.style.color = "#006400";
+        btn.style.setProperty("color", "#006400", "important");
+        btn.style.setProperty("font-weight", "600", "important");
       }
       btn.appendChild(span);
       btn.style.fontSize = "16px";
@@ -658,7 +659,7 @@
 
     const ICONS = {
       next: '⏭',
-      untracked: '❓',
+      untracked: '?',
       channel: '🚫',
     };
 
