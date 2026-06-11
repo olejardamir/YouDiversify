@@ -607,19 +607,25 @@
       btn.setAttribute("aria-pressed", "false");
       btn.setAttribute("aria-disabled", "false");
       btn.innerHTML = `<div class="yt-spec-button-shape-next__icon"><span class="yt-icon-wrapper" style="width:24px;height:24px;"><span class="yt-icon-shape" style="width:24px;height:24px;">${icon}</span></span></div><yt-touch-feedback-shape class="yt-spec-touch-feedback-shape yt-spec-touch-feedback-shape--touch-response" aria-hidden="true"><div class="yt-spec-touch-feedback-shape__stroke"></div><div class="yt-spec-touch-feedback-shape__fill"></div></yt-touch-feedback-shape>`;
-      btn.addEventListener("click", handler);
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        handler();
+      });
       return btn;
     };
 
     const ICONS = {
-      next: `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true"><path d="M6 6h12v12H6zM4 4h16v16H4z"/></svg>`,
-      untracked: `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true"><text x="12" y="17" font-size="14" text-anchor="middle" fill="currentColor">?</text></svg>`,
-      channel: `<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" focusable="false" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
+      next: '<svg viewBox="0 0 24 24"><path d="M5 4v16l10-8L5 4Zm11 0h3v16h-3V4Z"/></svg>',
+      untracked: '<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/></svg>',
+      channel: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8 0-1.85.63-3.55 1.69-4.9L16.9 18.31C15.55 19.37 13.85 20 12 20zm6.31-3.1L7.1 5.69C8.45 4.63 10.15 4 12 4c4.42 0 8 3.58 8 8 0 1.85-.63 3.55-1.69 4.9z"/></svg>',
     };
 
-    const btnNext = makeBtn("Skip next", ICONS.next, "yd-inline-next", () => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_SKIP_NEXT" }));
-    const btnUntracked = makeBtn("Skip next without tracking", ICONS.untracked, "yd-inline-untracked", () => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_SKIP_NEXT_UNTRACKED" }));
-    const btnChannel = makeBtn("Block channel and skip", ICONS.channel, "yd-inline-channel", () => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_SKIP_CHANNEL" }));
+    const sendCommand = (type) => chrome.runtime.sendMessage({ type: "YT_YOUDIVERSIFY_RELAY", command: { type } });
+
+    const btnNext = makeBtn("Skip next", ICONS.next, "yd-inline-next", () => sendCommand("YT_YOUDIVERSIFY_SKIP_NEXT"));
+    const btnUntracked = makeBtn("Skip next without tracking", ICONS.untracked, "yd-inline-untracked", () => sendCommand("YT_YOUDIVERSIFY_SKIP_NEXT_UNTRACKED"));
+    const btnChannel = makeBtn("Block channel and skip", ICONS.channel, "yd-inline-channel", () => sendCommand("YT_YOUDIVERSIFY_SKIP_CHANNEL"));
 
     container.append(btnNext, btnUntracked, btnChannel);
     wrapper.appendChild(container);
