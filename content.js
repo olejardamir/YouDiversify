@@ -610,6 +610,10 @@
       span.textContent = icon;
       span.style.fontSize = cls.includes("yd-inline-next") ? "20px" : "16px";
       span.style.lineHeight = "1";
+      if (cls.includes("yd-inline-next")) {
+        span.style.position = "relative";
+        span.style.top = "2px";
+      }
       btn.appendChild(span);
       btn.style.fontSize = "16px";
       btn.style.lineHeight = "1";
